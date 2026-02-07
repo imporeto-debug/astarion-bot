@@ -2,9 +2,9 @@ import os
 import json
 import requests
 import random
-
+from datetime import date
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 
 # ================== НАСТРОЙКИ ==================
@@ -131,12 +131,42 @@ async def random_quote(interaction: discord.Interaction):
     msg = random.choice(messages)
     await interaction.response.send_message(f"**{msg.author.display_name}:** {msg.clean_content}")
 
+# ================== ДНИ РОЖДЕНИЯ ==================
+
+def generate_birthday_message(name, is_wife=False):
+    if is_wife:
+        display_name = "Баклажанчик"
+    else:
+        display_name = name
+    return (
+        f"*softly steps closer*\n"
+        f"**HAPPY BIRTHDAY, {display_name.upper()}!**\n"
+        f"*Wishing you a good day.*"
+    )
+
+@tasks.loop(hours=24)
+async def birthday_check():
+    today = date.today().strftime("%m-%d")
+    for user_id, info in users_memory.items():
+        birthday = info.get("birthday")
+        is_wife = info.get("wife", False)
+        # поддержка формата MM-DD
+        if birthday and birthday[:5] == today:
+            user = bot.get_user(int(user_id))
+            if user:
+                await user.send(generate_birthday_message(info.get("name", "User"), is_wife=is_wife))
+
+@birthday_check.before_loop
+async def before_birthday_check():
+    await bot.wait_until_ready()
+
 # ================== СОБЫТИЯ ==================
 
 @bot.event
 async def on_ready():
     guild = discord.Object(id=GUILD_ID)
     await tree.sync(guild=guild)
+    birthday_check.start()
     print(f"🦇 Logged in as {bot.user} — slash-команды синхронизированы на сервере {GUILD_ID}")
 
 @bot.event
@@ -193,5 +223,7 @@ async def on_message(message):
     trim_history(conversation_history)
 
     await message.channel.send(reply)
+
+# ================== ЗАПУСК ==================
 
 bot.run(DISCORD_TOKEN)
