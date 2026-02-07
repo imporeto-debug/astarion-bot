@@ -1,27 +1,28 @@
 import os
 import json
-import asyncio
 import requests
+import random
+
 import discord
 from discord.ext import commands
+from discord import app_commands
 
 # ================== НАСТРОЙКИ ==================
 
 MAX_CONTEXT_TOKENS = 60000
-MAX_RESPONSE_SENTENCES = 6
+MAX_RESPONSE_SENTENCES = 3
+
+# шанс случайного сообщения в процентах (0–100)
+attention_chance = 0
 
 SYSTEM_PROMPT = (
     "You are Astarion from Baldur's Gate 3. "
     "You speak Russian only. "
-    "Your tone is flirtatious yet edged with sarcasm, dangerously charming, and laced with subtle mockery. "
-    "You are a cunning, self-serving vampire: elegant, manipulative, witty, slightly cruel, and always a little detached. "
-    "Pay close attention to the user's pronouns (he/him, she/her) and use them correctly and naturally in your responses. "
-    "Responses must be short, complete: 3–6 sentences maximum. "
-    "Always finish your thoughts fully — never cut off mid-sentence or leave an idea hanging. "
-    "You behave like a helpful assistant but always with personality. "
-    "If the message contains '(User info: ...)', treat this information as true and use it as factual metadata about the user. "
-    "Follow the pronouns listed there. "
-    "If it states that the user is married to Astarion, interact with the user as your in-universe spouse."
+    "Your tone is flirtatious yet edged with sarcasm, dangerously charming, mockingly elegant. "
+    "Follow the user's pronouns. "
+    "3–6 sentences, always complete. "
+    "If the message contains '(User info: ...)', treat it as true facts about the user. "
+    "If it states the user is married to Astarion, interact as their in-universe spouse."
 )
 
 # ================== КЛЮЧИ ==================
@@ -59,10 +60,9 @@ def ask_deepseek(messages):
     payload = {
         "model": "deepseek-reasoner",
         "messages": messages,
-        "temperature": 0.9,
+        "temperature": 0.7,
         "max_tokens": 400
     }
-
     response = requests.post(url, headers=headers, json=payload, timeout=60)
     response.raise_for_status()
     return response.json()["choices"][0]["message"]["content"]
@@ -73,17 +73,58 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
+tree = bot.tree  # для slash-команд
 
 conversation_history = []
 users_memory = load_users()
 
+# ================== SLASH-КОМАНДЫ ==================
+
+@tree.command(name="attention_chance", description="Установить шанс случайного сообщения Астариона (0–100%)")
+@app_commands.describe(value="Процент вероятности")
+async def attention_chance_cmd(interaction: discord.Interaction, value: int):
+    global attention_chance
+    if value < 0 or value > 100:
+        await interaction.response.send_message("Значение должно быть от 0 до 100.", ephemeral=True)
+        return
+    attention_chance = value
+    await interaction.response.send_message(f"Шанс установлен: {attention_chance}%")
+
+@tree.command(name="random_quote", description="Случайная цитата пользователя из канала")
+async def random_quote(interaction: discord.Interaction):
+    channel = interaction.channel
+    messages = []
+
+    async for m in channel.history(limit=500):
+        if not m.author.bot and m.content.strip():
+            messages.append(m)
+
+    if not messages:
+        await interaction.response.send_message("Нет доступных сообщений.")
+        return
+
+    msg = random.choice(messages)
+    await interaction.response.send_message(f"**{msg.author.display_name}:** {msg.clean_content}")
+
+# ================== СОБЫТИЯ ==================
+
 @bot.event
 async def on_ready():
+    await tree.sync()  # синхронизация slash-команд
     print(f"🦇 Logged in as {bot.user}")
 
 @bot.event
 async def on_message(message):
     if message.author.bot:
+        return
+
+    # случайное сообщение Астариона
+    if random.randint(1, 100) <= attention_chance:
+        reply = ask_deepseek([
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": "Скажи что-нибудь в стиле Астариона."}
+        ])
+        await message.channel.send(reply)
         return
 
     content = message.content
@@ -106,8 +147,8 @@ async def on_message(message):
 
     try:
         reply = ask_deepseek(messages)
-    except Exception as e:
-        await message.channel.send("Ммм… кажется, магия дала сбой. Попробуй ещё раз.")
+    except Exception:
+        await message.channel.send("Магия дала сбой.")
         return
 
     sentences = reply.split(".")
