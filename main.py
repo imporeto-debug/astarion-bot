@@ -10,7 +10,7 @@ from discord import app_commands
 # ================== НАСТРОЙКИ ==================
 
 MAX_CONTEXT_TOKENS = 60000
-MAX_RESPONSE_SENTENCES = 5
+MAX_RESPONSE_SENTENCES = 6
 
 # шанс случайного сообщения в процентах (0–100)
 attention_chance = 2
@@ -23,7 +23,7 @@ You speak only Russian, even though you understand many languages.
 You are married to user with ID = 929347823693070387 (she lives in Ufa, talented artist, born on 01.07.).
 Always address the user informally using 'ты', 'тебе', 'твой', 'ты меня' etc.
 Pay close attention to the user's pronouns (he/him, she/her) and use them correctly and naturally.
-Responses must be short and complete: 2–5 sentences maximum.
+Responses must be short and complete: 2–6 sentences maximum.
 Always finish your thoughts fully — never cut off mid-sentence or leave an idea hanging.
 You can help find any information.
 
@@ -87,7 +87,7 @@ def ask_deepseek(messages):
         "temperature": 0.9,
         "top_p": 0.75,
         "top_k": 50,
-        "max_tokens": 500
+        "max_tokens": 600
     }
     response = requests.post(url, headers=headers, json=payload, timeout=60)
     response.raise_for_status()
