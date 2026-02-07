@@ -67,7 +67,7 @@ def ask_deepseek(messages):
     payload = {
         "model": "deepseek-reasoner",
         "messages": messages,
-        "temperature": 0.9,
+        "temperature": 0.95,
         "max_tokens": 400
     }
     response = requests.post(url, headers=headers, json=payload, timeout=60)
