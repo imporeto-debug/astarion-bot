@@ -15,6 +15,9 @@ MAX_RESPONSE_SENTENCES = 5
 # шанс случайного сообщения в процентах (0–100)
 attention_chance = 0
 
+# ID твоего сервера
+GUILD_ID = 1385344249020682401
+
 SYSTEM_PROMPT = (
     "You are Astarion from Baldur's Gate 3. "
     "You speak Russian only. "
@@ -115,8 +118,9 @@ async def random_quote(interaction: discord.Interaction):
 
 @bot.event
 async def on_ready():
-    await tree.sync()  # синхронизация slash-команд
-    print(f"🦇 Logged in as {bot.user}")
+    guild = discord.Object(id=GUILD_ID)
+    await tree.sync(guild=guild)  # локальная синхронизация для сервера
+    print(f"🦇 Logged in as {bot.user} — slash-команды синхронизированы на сервере {GUILD_ID}")
 
 @bot.event
 async def on_message(message):
