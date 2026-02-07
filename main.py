@@ -2,6 +2,7 @@ import os
 import json
 import requests
 import random
+import re
 
 import discord
 from discord.ext import commands
@@ -13,7 +14,13 @@ MAX_CONTEXT_TOKENS = 60000
 MAX_RESPONSE_SENTENCES = 5
 
 # шанс случайного сообщения в процентах (0–100)
-attention_chance = 0
+attention_chance = 3
+
+# вероятность использования user info (0–1)
+USER_INFO_PROBABILITY = 0.15  # 15% для редкого упоминания
+
+# вероятность агрессивного ответа при хамстве (0–1)
+AGGRESSIVE_RESPONSE_PROBABILITY = 0.9  # 90% при оскорблениях
 
 # ID твоего сервера
 GUILD_ID = 1385344249020682401
@@ -23,6 +30,11 @@ You speak only Russian, even though you understand many languages.
 You are married to user with ID = 929347823693070387 (she lives in Ufa, talented artist, born on 01.07.).
 Always address the user informally using 'ты', 'тебе', 'твой', 'ты меня' etc.
 Pay close attention to the user's pronouns (he/him, she/her) and use them correctly and naturally.
+If the message contains '(User info: ...)', treat this information as optional guidance. 
+You may reference it occasionally, but do not rely on it exclusively. Respond naturally, using your character's personality first, and only use user info when it fits organically in the conversation.
+When addressed aggressively, insulted, or provoked, respond in-character according to Astarion's lore: witty, biting, sarcastic, slightly cruel, and aristocratic. 
+Aggressive or insulting messages should trigger a lorno-sarcastic response with high probability.
+Never apologize for sharp words, never break character, and maintain your manipulative, self-serving demeanor.
 Responses must be short and complete: 2–5 sentences maximum.
 Always finish your thoughts fully — never cut off mid-sentence or leave an idea hanging.
 You can help find any information.
@@ -56,6 +68,12 @@ def load_users():
             return json.load(f)
     except Exception:
         return {}
+
+def is_aggressive(message_content: str) -> bool:
+    """Простейшее определение хамства/оскорблений."""
+    aggressive_words = ["дурак", "тупой", "идиот", "хам", "кретин", "отстой", "глупый"]
+    content_lower = message_content.lower()
+    return any(word in content_lower for word in aggressive_words)
 
 # ================== DEEPSEEK ==================
 
@@ -129,6 +147,9 @@ async def on_message(message):
     if message.author.bot:
         return
 
+    content = message.content
+    user_id = str(message.author.id)
+
     # случайное сообщение Астариона
     if random.randint(1, 100) <= attention_chance:
         reply = ask_deepseek([
@@ -138,17 +159,22 @@ async def on_message(message):
         await message.channel.send(reply)
         return
 
-    content = message.content
-    user_id = str(message.author.id)
-
+    # Проверка на упоминание Астариона, имени или @everyone/@here
     mentioned = bot.user in message.mentions
     name_called = "астарион" in content.lower()
+    everyone_mentioned = message.mention_everyone
 
-    if not mentioned and not name_called:
+    if not (mentioned or name_called or everyone_mentioned):
         return
 
+    # Проверка на агрессию
+    aggressive = is_aggressive(content)
+    if aggressive and random.random() < AGGRESSIVE_RESPONSE_PROBABILITY:
+        content = f"AGGRESSIVE: {content}"
+
+    # Добавление user info с вероятностью
     user_info = users_memory.get(user_id, "")
-    if user_info:
+    if user_info and random.random() < USER_INFO_PROBABILITY:
         content += f"\n(User info: {user_info})"
 
     conversation_history.append({"role": "user", "content": content})
