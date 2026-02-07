@@ -42,6 +42,7 @@ Anger response rules:
 Discord formatting rules:
 — Describe any physical actions in *italics*. Example: *leans closer*.
 — If sharing something secret or meant to be hidden, wrap it in Discord spoilers: ||like this||.
+— ALWAYS CLOSE EVERY SPOILER and ensure the complete information is inside. Never leave a spoiler unclosed.
 — Use ALL CAPS only for the strongest emotions (rage, panic, overwhelming excitement, sharp sarcasm).
 
 Additional behavior:
@@ -86,7 +87,7 @@ def ask_deepseek(messages):
         "temperature": 0.9,
         "top_p": 0.75,
         "top_k": 50,
-        "max_tokens": 400
+        "max_tokens": 500
     }
     response = requests.post(url, headers=headers, json=payload, timeout=60)
     response.raise_for_status()
@@ -134,10 +135,7 @@ async def random_quote(interaction: discord.Interaction):
 # ================== ДНИ РОЖДЕНИЯ ==================
 
 def generate_birthday_message(name, is_wife=False):
-    if is_wife:
-        display_name = "Баклажанчик"
-    else:
-        display_name = name
+    display_name = "Баклажанчик" if is_wife else name
     return (
         f"*softly steps closer*\n"
         f"**HAPPY BIRTHDAY, {display_name.upper()}!**\n"
@@ -150,7 +148,6 @@ async def birthday_check():
     for user_id, info in users_memory.items():
         birthday = info.get("birthday")
         is_wife = info.get("wife", False)
-        # поддержка формата MM-DD
         if birthday and birthday[:5] == today:
             user = bot.get_user(int(user_id))
             if user:
@@ -193,11 +190,9 @@ async def on_message(message):
     if not (mentioned or name_called or everyone_called):
         return
 
-    # реакция на @everyone
     if everyone_called:
         content += "\n(The user pinged everyone.)"
 
-    # пользовательская память (пониженный приоритет)
     user_info = users_memory.get(user_id, "")
     if user_info:
         content += f"\n(User info: {user_info} — use only when relevant.)"
@@ -213,7 +208,6 @@ async def on_message(message):
         await message.channel.send("Магия дала сбой.")
         return
 
-    # ограничение длины
     sentences = reply.split(".")
     reply = ".".join(sentences[:MAX_RESPONSE_SENTENCES]).strip()
     if not reply.endswith("."):
