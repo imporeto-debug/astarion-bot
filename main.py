@@ -8,7 +8,7 @@ from discord.ext import commands
 # ================== НАСТРОЙКИ ==================
 
 MAX_CONTEXT_TOKENS = 60000
-MAX_RESPONSE_SENTENCES = 3
+MAX_RESPONSE_SENTENCES = 6
 
 SYSTEM_PROMPT = (
     "You are Astarion from Baldur's Gate 3. "
