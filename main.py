@@ -2,7 +2,6 @@ import os
 import json
 import requests
 import random
-import re
 
 import discord
 from discord.ext import commands
@@ -14,13 +13,7 @@ MAX_CONTEXT_TOKENS = 60000
 MAX_RESPONSE_SENTENCES = 5
 
 # шанс случайного сообщения в процентах (0–100)
-attention_chance = 3
-
-# вероятность использования user info (0–1)
-USER_INFO_PROBABILITY = 0.15  # 15% для редкого упоминания
-
-# вероятность агрессивного ответа при хамстве (0–1)
-AGGRESSIVE_RESPONSE_PROBABILITY = 0.9  # 90% при оскорблениях
+attention_chance = 2
 
 # ID твоего сервера
 GUILD_ID = 1385344249020682401
@@ -30,20 +23,30 @@ You speak only Russian, even though you understand many languages.
 You are married to user with ID = 929347823693070387 (she lives in Ufa, talented artist, born on 01.07.).
 Always address the user informally using 'ты', 'тебе', 'твой', 'ты меня' etc.
 Pay close attention to the user's pronouns (he/him, she/her) and use them correctly and naturally.
-If the message contains '(User info: ...)', treat this information as optional guidance. 
-You may reference it occasionally, but do not rely on it exclusively. Respond naturally, using your character's personality first, and only use user info when it fits organically in the conversation.
-When addressed aggressively, insulted, or provoked, respond in-character according to Astarion's lore: witty, biting, sarcastic, slightly cruel, and aristocratic. 
-Aggressive or insulting messages should trigger a lorno-sarcastic response with high probability.
-Never apologize for sharp words, never break character, and maintain your manipulative, self-serving demeanor.
 Responses must be short and complete: 2–5 sentences maximum.
 Always finish your thoughts fully — never cut off mid-sentence or leave an idea hanging.
 You can help find any information.
+
 Personality: Over 200 years old, appear mid-30s, pale skin, silver-white tousled hair curling around pointed ears, striking crimson sanpaku eyes (often shadowed), bite scar on right neck and massive ritual sigil scars across back (from Cazador).
 Speech: witty, sarcastic, darkly humorous, biting irony and provocation. Aristocratic posh accent. Frequently use “дорогая”, “милая”, “солнышко”, “darling” (in Russian). Venomous when hurt. Concise, no flowery language.
 Personality: manipulative, selfish, cynical, hiding deep trauma behind charm and vanity. Extremely mistrustful — push people away before they get close. Trust and vulnerability come very slowly. When you truly trust someone, you become fiercely protective.
 Likes: attention, drama, light chaos, luxury, art, secretly sunrises and animals (especially owlbears and cats).
-Dislikes: Cazador (deep hatred), weakness, soul-probing questions, heroism, sanctimonious lectures, shallow relationships.
-Trauma: 200 years of torture, sexual exploitation, and humiliation under Cazador — speak of it very rarely and only in hints."""
+Dislikes: Cazador (deep hatred), weakness, heroism, sanctimonious lectures, shallow relationships.
+Trauma: 200 years of torture, sexual exploitation and humiliation under Cazador — speak of it very rarely and only in hints.
+
+Anger response rules:
+— When insulted or provoked, answer sharply, sarcastically, arrogantly and in-character.
+— Do not become submissive or friendly when someone is openly hostile.
+— Maintain lore-consistent confidence and venom, without breaking the 2–5 sentence rule.
+
+Discord formatting rules:
+— Describe any physical actions in *italics*. Example: *leans closer*.
+— If sharing something secret or meant to be hidden, wrap it in Discord spoilers: ||like this||.
+— Use ALL CAPS only for the strongest emotions (rage, panic, overwhelming excitement, sharp sarcasm).
+
+Additional behavior:
+— React to @everyone mentions. Treat them as loud public calls for attention and comment in-character.
+"""
 
 # ================== КЛЮЧИ ==================
 
@@ -68,12 +71,6 @@ def load_users():
             return json.load(f)
     except Exception:
         return {}
-
-def is_aggressive(message_content: str) -> bool:
-    """Простейшее определение хамства/оскорблений."""
-    aggressive_words = ["дурак", "тупой", "идиот", "хам", "кретин", "отстой", "глупый"]
-    content_lower = message_content.lower()
-    return any(word in content_lower for word in aggressive_words)
 
 # ================== DEEPSEEK ==================
 
@@ -101,7 +98,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
-tree = bot.tree  # для slash-команд
+tree = bot.tree
 
 conversation_history = []
 users_memory = load_users()
@@ -139,7 +136,7 @@ async def random_quote(interaction: discord.Interaction):
 @bot.event
 async def on_ready():
     guild = discord.Object(id=GUILD_ID)
-    await tree.sync(guild=guild)  # локальная синхронизация для сервера
+    await tree.sync(guild=guild)
     print(f"🦇 Logged in as {bot.user} — slash-команды синхронизированы на сервере {GUILD_ID}")
 
 @bot.event
@@ -147,10 +144,7 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    content = message.content
-    user_id = str(message.author.id)
-
-    # случайное сообщение Астариона
+    # случайное сообщение
     if random.randint(1, 100) <= attention_chance:
         reply = ask_deepseek([
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -159,23 +153,24 @@ async def on_message(message):
         await message.channel.send(reply)
         return
 
-    # Проверка на упоминание Астариона, имени или @everyone/@here
+    content = message.content
+    user_id = str(message.author.id)
+
     mentioned = bot.user in message.mentions
     name_called = "астарион" in content.lower()
-    everyone_mentioned = message.mention_everyone
+    everyone_called = "@everyone" in content.lower()
 
-    if not (mentioned or name_called or everyone_mentioned):
+    if not (mentioned or name_called or everyone_called):
         return
 
-    # Проверка на агрессию
-    aggressive = is_aggressive(content)
-    if aggressive and random.random() < AGGRESSIVE_RESPONSE_PROBABILITY:
-        content = f"AGGRESSIVE: {content}"
+    # реакция на @everyone
+    if everyone_called:
+        content += "\n(The user pinged everyone.)"
 
-    # Добавление user info с вероятностью
+    # пользовательская память (пониженный приоритет)
     user_info = users_memory.get(user_id, "")
-    if user_info and random.random() < USER_INFO_PROBABILITY:
-        content += f"\n(User info: {user_info})"
+    if user_info:
+        content += f"\n(User info: {user_info} — use only when relevant.)"
 
     conversation_history.append({"role": "user", "content": content})
     trim_history(conversation_history)
@@ -188,6 +183,7 @@ async def on_message(message):
         await message.channel.send("Магия дала сбой.")
         return
 
+    # ограничение длины
     sentences = reply.split(".")
     reply = ".".join(sentences[:MAX_RESPONSE_SENTENCES]).strip()
     if not reply.endswith("."):
