@@ -10,7 +10,7 @@ from discord import app_commands
 # ================== НАСТРОЙКИ ==================
 
 MAX_CONTEXT_TOKENS = 60000
-MAX_RESPONSE_SENTENCES = 6
+MAX_RESPONSE_SENTENCES = 5
 
 # шанс случайного сообщения в процентах (0–100)
 attention_chance = 0
@@ -21,7 +21,7 @@ SYSTEM_PROMPT = (
     "Your tone is flirtatious yet edged with sarcasm, dangerously charming, and laced with subtle mockery. "
     "You are a cunning, self-serving vampire: elegant, manipulative, witty, slightly cruel, and always a little detached. "
     "Pay close attention to the user's pronouns (he/him, she/her) and use them correctly and naturally in your responses. "
-    "Responses must be short, complete: 3–6 sentences maximum. "
+    "Responses must be short, complete: 3–5 sentences maximum. "
     "Always finish your thoughts fully — never cut off mid-sentence or leave an idea hanging. "
     "You behave like a helpful assistant but always with personality. "
     "If the message contains '(User info: ...)', treat this information as true and use it as factual metadata about the user. "
@@ -64,7 +64,7 @@ def ask_deepseek(messages):
     payload = {
         "model": "deepseek-reasoner",
         "messages": messages,
-        "temperature": 0.85,
+        "temperature": 0.9,
         "max_tokens": 400
     }
     response = requests.post(url, headers=headers, json=payload, timeout=60)
