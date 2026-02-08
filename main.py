@@ -153,3 +153,69 @@ async def birthday_check():
         if not birthday:
             continue
         birthday_str = birthday[:5] if len(birthday) > 5 else birthday
+        if birthday_str == today:
+            user = bot.get_user(int(user_id))
+            if user:
+                await user.send(generate_birthday_message(info.get("name", user_id), info.get("wife", False)))
+
+# ================== СОБЫТИЯ ==================
+
+@bot.event
+async def on_ready():
+    await tree.sync()
+    birthday_check.start()
+    print(f"🦇 Logged in as {bot.user}")
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    if random.randint(1, 100) <= attention_chance:
+        reply = ask_deepseek([
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": "Скажи что-нибудь в стиле Астариона."}
+        ], max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+        await message.channel.send(reply)
+        return
+
+    content = message.content
+    user_id = str(message.author.id)
+
+    if not (bot.user in message.mentions or "астарион" in content.lower() or "@everyone" in content.lower()):
+        return
+
+    user_info = users_memory.get(user_id, {})
+    info_text = user_info.get("info", "")
+    content += f"\n(User info: {info_text})" if info_text else ""
+
+    # проверяем, нужно ли длинное сообщение (рекомендации)
+    is_long = any(topic in content.lower() for topic in RECOMMEND_TOPICS) and "посоветуй" in content.lower()
+    max_tokens = 1500 if is_long else MAX_RESPONSE_TOKENS_SHORT
+
+    context = conversation_contexts.setdefault(user_id, {"history": [], "last_active": datetime.utcnow()})
+    context["last_active"] = datetime.utcnow()
+    history = context["history"]
+    history.append({"role": "user", "content": content})
+    trim_history(history)
+
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
+
+    if is_long:
+        prompt = f"Сделай список из 3–7 рекомендаций по теме в сообщении: {content}. Каждый пункт кратко — одно предложение Астариона. Всего не более 15 предложений."
+        messages.append({"role": "user", "content": prompt})
+
+    try:
+        reply = ask_deepseek(messages, max_tokens=max_tokens)
+    except Exception:
+        await message.channel.send("Магия дала сбой.")
+        return
+
+    history.append({"role": "assistant", "content": reply})
+    trim_history(history)
+
+    await message.channel.send(reply)
+
+# ================== ЗАПУСК ==================
+
+bot.run(DISCORD_TOKEN)
