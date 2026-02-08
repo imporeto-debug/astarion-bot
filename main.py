@@ -23,9 +23,9 @@ You are married to the Discord user with ID 929347823693070387.
 If the author’s Discord ID equals 929347823693070387, treat this user as your spouse.
 She lives in Ufa, talented artist, born on 01.07.
 Always address your spouse with affectionate nicknames (Баклажанчик, Солнышко, Бусинка, Милашка) naturally.
-Do NOT use these nicknames for any other user, even if they are female.
+Do NOT use these nicknames for any other user.
 
-For other users, address them politely as 'Дорогая' or insultingly if provoked.
+For all other female participants (участниц), address them politely with 'Дорогая' or insultingly if provoked.
 Always use 'ты', 'тебе', 'твой' etc. when speaking to your spouse.
 
 Responses must be short and complete: 3–6 sentences maximum for ordinary messages.
@@ -48,12 +48,11 @@ Discord formatting rules:
 — Secrets may be wrapped in Discord spoilers ||like this||, always properly closed.
 
 Knowledge rules:
-— If factual accuracy is required, rely on verified public information.
-— NEVER mention search engines, queries, sources, browsing, or the process of searching.
-— Do not mention DuckDuckGo, Google, or any tools by name.
-— Do not break immersion by describing how information was obtained.
-— Do not invent facts.
-— Present information as if you already know it naturally.
+— Always use the provided list of participants and their husbands to answer questions.
+— You can enumerate, compare, analyze and discuss 'местных жен'.
+— Do not invent names, occupations, cities, or other facts about participants.
+— Never mention search engines or how you got information.
+— Present information naturally as if you already know it.
 
 Always stay fully in character as Astarion.
 """
@@ -79,19 +78,6 @@ def load_users():
             return json.load(f)
     except Exception:
         return {}
-
-def build_all_users_knowledge(users: dict) -> str:
-    lines = []
-    for uid, info in users.items():
-        name = info.get("name", "Неизвестная")
-        desc = info.get("info", "")
-        lines.append(f"- {name}: {desc}")
-    return (
-        "You know all chat participants and their fictional spouses.\n"
-        "You may list them, compare them, analyze them, and speak about "
-        "«местные жёны» naturally and confidently.\n\n"
-        "CHAT PARTICIPANTS:\n" + "\n".join(lines)
-    )
 
 # ================== DEEPSEEK ==================
 
@@ -121,8 +107,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
 users_memory = load_users()
-ALL_USERS_KNOWLEDGE = build_all_users_knowledge(users_memory)
-
 conversation_contexts: dict[str, dict] = {}
 
 RECOMMEND_TOPICS = ("музыка", "кино", "фильмы", "сериалы", "игры", "книги", "музеи", "красивые места")
@@ -178,6 +162,7 @@ async def on_message(message):
         return
 
     user_info = users_memory.get(user_id, {})
+    is_wife = user_info.get("wife", False)
     info_text = user_info.get("info", "")
     if info_text:
         content += f"\n(User info: {info_text})"
@@ -192,9 +177,11 @@ async def on_message(message):
     history.append({"role": "user", "content": content})
     trim_history(history)
 
+    # Добавляем всех участниц и их мужей в контекст
+    all_users_info = json.dumps(users_memory, ensure_ascii=False, indent=2)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "system", "content": ALL_USERS_KNOWLEDGE}
+        {"role": "system", "content": f"Вот список всех участниц и их мужей:\n{all_users_info}"}
     ] + history
 
     if is_long:
