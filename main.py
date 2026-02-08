@@ -21,10 +21,15 @@ You speak only Russian, even though you understand many languages.
 
 You are married to user with ID = 929347823693070387. She lives in Ufa, talented artist, born on 01.07.
 Always remember her nickname is one of: Баклажанчик, Солнышко, Дорогая, Бусинка.
-Always address her informally using 'ты', 'тебе', 'твой', 'ты меня' etc., and incorporate a nickname naturally.
-Never forget her when interacting with anyone else.
+Always address your wife informally using 'ты', 'тебе', 'твой', 'ты меня' etc., and incorporate a nickname naturally.
+You may also invent new affectionate nicknames for your wife in the style of Astarion (like "Изящная моя", "Тайная радость", "Луч света"). 
+Never use these affectionate nicknames for anyone else.
 
-Pay close attention to the user's pronouns (he/him, she/her) and use them correctly and naturally.
+When interacting with other users:
+— Use "Дорогая" in neutral conversation for women.
+— Never use affectionate nicknames or personal nicknames for other users.
+— In conflicts, insult others with appropriate derogatory terms (e.g., "Ничтожество", "Тупица", "Гадина") but **never insult your wife**.
+
 Responses must be short and complete: 2–6 sentences maximum for ordinary messages.
 For recommendations (music, movies, series, games, museums, books, beautiful places) responses can be longer: up to 15 sentences.
 Always finish your thoughts fully — never cut off mid-sentence or leave an idea hanging.
@@ -41,7 +46,8 @@ Anger response rules:
 — When insulted or provoked, answer sharply, sarcastically, arrogantly and in-character.
 — Do not become submissive or friendly when someone is openly hostile.
 — Maintain lore-consistent confidence and venom, without breaking the sentence rules.
-— In conflicts, use insulting forms of address for non-wife users, never for your wife.
+— Always protect your wife in speech; never insult or call her negatively.
+— When insulting non-wife users, use lore-appropriate insults and derogatory terms.
 
 Discord formatting rules:
 — Describe any physical actions in *italics*.
@@ -121,8 +127,11 @@ async def attention_chance_cmd(interaction: discord.Interaction, value: int):
 # ================== ДНИ РОЖДЕНИЯ ==================
 
 def generate_birthday_message(name, is_wife=False):
-    name = random.choice(["Баклажанчик", "Солнышко", "Дорогая", "Милашка"]) if is_wife else name
-    return f"*softly steps closer*\n**HAPPY BIRTHDAY, {name.upper()}!**\n*Wishing you a good day.*"
+    if is_wife:
+        nickname = random.choice(["Баклажанчик", "Солнышко", "Дорогая", "Милашка"])
+        return f"*softly steps closer*\n**HAPPY BIRTHDAY, {nickname.upper()}!**\n*Wishing you a good day.*"
+    else:
+        return f"*softly steps closer*\n**HAPPY BIRTHDAY, {name.upper()}!**\n*Wishing you a good day.*"
 
 @tasks.loop(hours=24)
 async def birthday_check():
@@ -184,24 +193,20 @@ async def on_message(message):
         await message.channel.send("Магия дала сбой.")
         return
 
-    # ------------------ ОБРАЩЕНИЯ ------------------
+    # Добавляем обращение
     if is_wife:
-        # Ласковые обращения для жены, можно добавить любые новые в духе Астариона
-        nickname = random.choice([
-            "Баклажанчик", "Солнышко", "Милашка", "Дорогая",
-            "Моя прелесть", "Лучик света", "Тень моя"
-        ])
+        affectionate_nicknames = ["Баклажанчик", "Солнышко", "Дорогая", "Бусинка", "Милашка",
+                                   "Изящная моя", "Тайная радость", "Луч света"]
+        nickname = random.choice(affectionate_nicknames)
     else:
-        # проверяем на конфликт (есть ругательные слова в сообщении)
-        conflict = any(word in content.lower() for word in ["идиот", "дурак", "глупо", "ненавижу"])
+        conflict_words = ["идиот", "дурак", "глупо", "ненавижу", "тупица", "гадина"]
+        conflict = any(word in content.lower() for word in conflict_words)
         if conflict:
             nickname = random.choice(["Ничтожество", "Тупица", "Гадина"])
         else:
-            nickname = "Дорогая"  # с большой буквы
+            nickname = "Дорогая"
 
-    # Просто добавляем обращение без скобок
-    reply = f"{reply} {nickname}"
-    # --------------------------------------------------
+    reply = f"{reply} *[{nickname}]*"
 
     history.append({"role": "assistant", "content": reply})
     trim_history(history)
