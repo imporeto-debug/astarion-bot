@@ -13,7 +13,7 @@ from discord import app_commands
 MAX_CONTEXT_TOKENS = 50000
 MAX_RESPONSE_SENTENCES_SHORT = 6
 MAX_RESPONSE_TOKENS_SHORT = 600
-MAX_RESPONSE_SENTENCES_LONG = 20
+MAX_RESPONSE_SENTENCES_LONG = 15
 MAX_RESPONSE_TOKENS_LONG = 2000
 
 attention_chance = 2
@@ -112,6 +112,7 @@ users_memory = load_users()
 conversation_contexts: dict[str, dict] = {}
 
 LONG_TOPICS = ("музыка", "кино", "фильмы", "сериалы", "игры", "книги", "музеи", "красивые места")
+RECOMMEND_KEYWORD = "посоветуй"
 
 # ================== SLASH-КОМАНДЫ ==================
 
@@ -136,7 +137,7 @@ async def random_quote(interaction: discord.Interaction):
         return
     msg = random.choice(messages)
 
-    comment_prompt = f"Дай короткий 1-3 предложения комментарий Астариона на сообщение: {msg.clean_content}"
+    comment_prompt = f"Дай короткий 1-2 предложения комментарий Астариона на сообщение: {msg.clean_content}"
     reply = ask_deepseek([
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": comment_prompt}
@@ -145,6 +146,14 @@ async def random_quote(interaction: discord.Interaction):
     await interaction.response.send_message(f"**{msg.author.display_name}:** {msg.clean_content}\n\n*Комментарий Астариона:* {reply}")
 
 # ================== События ==================
+
+def build_recommendation_prompt(topic: str, content: str) -> str:
+    """Создает промт для DeepSeek для выдачи списка рекомендаций (3–7 пунктов)"""
+    return f"""
+Ты Астарион из Baldur's Gate 3. Дай список из 3–7 {topic} для пользователя. 
+Каждый пункт — короткий 1–2 предложения комментарий Астариона, остроумно, саркастично, в характере. 
+Тема запроса: {content}
+"""
 
 @bot.event
 async def on_ready():
@@ -156,6 +165,10 @@ async def on_message(message):
     if message.author.bot:
         return
 
+    content = message.content.lower()
+    user_id = str(message.author.id)
+
+    # Случайное внимание Астариона
     if random.randint(1, 100) <= attention_chance:
         reply = ask_deepseek([
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -164,18 +177,31 @@ async def on_message(message):
         await message.channel.send(reply)
         return
 
-    content = message.content
-    user_id = str(message.author.id)
+    # Рекомендации только на ключевое слово "посоветуй" и темы из LONG_TOPICS
+    if RECOMMEND_KEYWORD in content and any(topic in content for topic in LONG_TOPICS):
+        topic = next(topic for topic in LONG_TOPICS if topic in content)
+        prompt = build_recommendation_prompt(topic, content)
+        try:
+            reply = ask_deepseek([
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt}
+            ], max_tokens=MAX_RESPONSE_TOKENS_LONG)
+        except Exception:
+            await message.channel.send("Магия дала сбой.")
+            return
 
-    if not (bot.user in message.mentions or "астарион" in content.lower() or "@everyone" in content.lower()):
+        await message.channel.send(reply)
+        return
+
+    # Для обычных упоминаний и сообщений
+    if not (bot.user in message.mentions or "астарион" in content or "@everyone" in content):
         return
 
     user_info = users_memory.get(user_id, "")
     content += f"\n(User info: {user_info})" if user_info else ""
 
-    is_long = any(topic in content.lower() for topic in LONG_TOPICS)
-    max_tokens = MAX_RESPONSE_TOKENS_LONG if is_long else MAX_RESPONSE_TOKENS_SHORT
-    max_sentences = MAX_RESPONSE_SENTENCES_LONG if is_long else MAX_RESPONSE_SENTENCES_SHORT
+    max_tokens = MAX_RESPONSE_TOKENS_SHORT
+    max_sentences = MAX_RESPONSE_SENTENCES_SHORT
 
     context = conversation_contexts.setdefault(user_id, {"history": [], "last_active": datetime.utcnow()})
     context["last_active"] = datetime.utcnow()
@@ -183,10 +209,10 @@ async def on_message(message):
     history.append({"role": "user", "content": content})
     trim_history(history)
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
+    messages_history = [{"role": "system", "content": SYSTEM_PROMPT}] + history
 
     try:
-        reply = ask_deepseek(messages, max_tokens=max_tokens)
+        reply = ask_deepseek(messages_history, max_tokens=max_tokens)
     except Exception:
         await message.channel.send("Магия дала сбой.")
         return
