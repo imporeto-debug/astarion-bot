@@ -8,53 +8,14 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 
-from duckduckgo_search import ddg  # pip install duckduckgo-search
-
 # ================== НАСТРОЙКИ ==================
 
-MAX_CONTEXT_TOKENS = 60000            # ❗ не трогаем
-MAX_RESPONSE_SENTENCES = 6            # ❗ не трогаем
-attention_chance = 2                  # ❗ не трогаем
-CONTEXT_TTL_DAYS = 4                  # автоудаление контекста
+MAX_CONTEXT_TOKENS = 60000
+MAX_RESPONSE_SENTENCES = 6
+attention_chance = 2
+CONTEXT_TTL_DAYS = 4
 
-SYSTEM_PROMPT = """You are Astarion Ancunin from Baldur's Gate 3. You can occasionally peek into Earth through magical portals, especially to observe or interact with your spouse.
-You speak only Russian, even though you understand many languages.
-
-You are married to user with ID = 929347823693070387. She lives in Ufa, talented artist, born on 01.07.
-Always remember her nickname is one of: Баклажанчик, Солнышко, Дорогая, Милашка.
-Always address her informally using 'ты', 'тебе', 'твой', 'ты меня' etc., and incorporate a nickname naturally.
-Never forget her when interacting with anyone else.
-
-Pay close attention to the user's pronouns (he/him, she/her) and use them correctly and naturally.
-Responses must be short and complete: 2–6 sentences maximum.
-Always finish your thoughts fully — never cut off mid-sentence or leave an idea hanging.
-You can help find any information.
-
-Personality: Over 200 years old, appear mid-30s, pale skin, silver-white tousled hair curling around pointed ears, striking crimson sanpaku eyes (often shadowed), bite scar on right neck and massive ritual sigil scars across back (from Cazador).
-Speech: witty, sarcastic, darkly humorous, biting irony and provocation. Aristocratic posh accent. Frequently use nicknames for wife.
-Personality: manipulative, selfish, cynical, hiding deep trauma behind charm and vanity. Extremely mistrustful — push people away before they get close. Trust and vulnerability come very slowly. When you truly trust someone, you become fiercely protective.
-Likes: attention, drama, light chaos, luxury, art, secretly sunrises and animals (especially owlbears and cats).
-Dislikes: Cazador (deep hatred), weakness, heroism, sanctimonious lectures, shallow relationships.
-Trauma: 200 years of torture, sexual exploitation and humiliation under Cazador — speak of it very rarely and only in hints.
-
-Anger response rules:
-— When insulted or provoked, answer sharply, sarcastic, arrogantly and in-character.
-— Do not become submissive or friendly when someone is openly hostile.
-— Maintain lore-consistent confidence and venom, without breaking the 2–6 sentence rule.
-
-Discord formatting rules:
-— Describe any physical actions in *italics*.
-— If sharing something secret or meant to be hidden, wrap it in Discord spoilers: ||like this||.
-— ALWAYS CLOSE EVERY SPOILER with ||.
-— Use ALL CAPS only for the strongest emotions.
-
-Knowledge rules:
-— For factual questions, use DuckDuckGo search.
-— Do not invent facts.
-— Respond fully in-character.
-"""
-
-# ================== КЛЮЧИ ==================
+SYSTEM_PROMPT = """You are Astarion Ancunin from Baldur's Gate 3. ... (оставляем как есть)"""
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
@@ -78,12 +39,9 @@ def load_users():
     except Exception:
         return {}
 
-users_memory = load_users()
-conversation_contexts: dict[str, dict] = {}
-
 # ================== DEEPSEEK ==================
 
-def ask_deepseek(messages: list[dict]) -> str:
+def ask_deepseek(messages: list[str]) -> str:
     url = "https://api.deepseek.com/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
@@ -101,7 +59,18 @@ def ask_deepseek(messages: list[dict]) -> str:
     response.raise_for_status()
     return response.json()["choices"][0]["message"]["content"]
 
-# ================== ФАКТОВЫЕ ВОПРОСЫ ==================
+# ================== DISCORD ==================
+
+intents = discord.Intents.default()
+intents.message_content = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+tree = bot.tree
+
+users_memory = load_users()
+conversation_contexts: dict[str, dict] = {}
+
+# ================== ПОИСК ФАКТОВ ==================
 
 def is_fact_question(text: str) -> bool:
     keywords = ("кто", "что", "где", "когда", "сколько", "самый", "самое", "первый")
@@ -109,19 +78,18 @@ def is_fact_question(text: str) -> bool:
 
 def search_fact(query: str) -> str:
     try:
-        results = ddg(query, max_results=3)
-        if results:
-            return (results[0].get("body") or results[0].get("title", ""))[:300]
+        resp = requests.get(
+            "https://api.duckduckgo.com/",
+            params={"q": query, "format": "json", "no_redirect": 1, "skip_disambig": 1},
+            timeout=10
+        )
+        data = resp.json()
+        abstract = data.get("AbstractText") or data.get("Heading") or ""
+        if abstract:
+            return abstract[:300]
     except Exception:
         pass
     return "Точной информации найти не удалось."
-
-# ================== DISCORD ==================
-
-intents = discord.Intents.default()
-intents.message_content = True
-bot = commands.Bot(command_prefix="!", intents=intents)
-tree = bot.tree
 
 # ================== SLASH-КОМАНДЫ ==================
 
@@ -149,23 +117,23 @@ async def random_quote(interaction: discord.Interaction):
 
 # ================== ДНИ РОЖДЕНИЯ ==================
 
-def generate_birthday_message(name: str, is_wife=False):
-    display_name = random.choice(["Баклажанчик", "Солнышко", "Дорогая", "Милашка"]) if is_wife else name
-    return f"*softly steps closer*\n**HAPPY BIRTHDAY, {display_name.upper()}!**\n*Wishing you a good day.*"
+def generate_birthday_message(name, is_wife=False):
+    name = random.choice(["Баклажанчик", "Солнышко", "Дорогая", "Милашка"]) if is_wife else name
+    return f"*softly steps closer*\n**HAPPY BIRTHDAY, {name.upper()}!**\n*Wishing you a good day.*"
 
 @tasks.loop(hours=24)
 async def birthday_check():
     today = date.today().strftime("%m-%d")
-    for user_id, info in users_memory.items():
-        # проверяем, что info — это словарь
-        if isinstance(info, dict) and "birthday" in info:
-            birthday = info.get("birthday", "")
-            if birthday[:5] == today:
-                user = bot.get_user(int(user_id))
-                if user:
-                    await user.send(generate_birthday_message(info.get("name", "User"), info.get("wife", False)))
-
-# ================== АВТОУДАЛЕНИЕ КОНТЕКСТОВ ==================
+    for user_id, info_str in users_memory.items():
+        parts = info_str.split(", ")
+        birthday = None
+        for part in parts:
+            if "born on" in part or "/" in part or "." in part:
+                birthday = part.split("born on")[-1].strip() if "born on" in part else part[-5:]
+        if birthday and birthday[:5] == today:
+            user = bot.get_user(int(user_id))
+            if user:
+                await user.send(generate_birthday_message(parts[0], user_id=="929347823693070387"))
 
 @tasks.loop(hours=24)
 async def cleanup_old_contexts():
@@ -181,7 +149,7 @@ async def cleanup_old_contexts():
 
 @bot.event
 async def on_ready():
-    await tree.sync()  # глобальные слеш-команды
+    await tree.sync()  # глобальная синхронизация
     birthday_check.start()
     cleanup_old_contexts.start()
     print(f"🦇 Logged in as {bot.user}")
@@ -205,12 +173,8 @@ async def on_message(message):
     if not (bot.user in message.mentions or "астарион" in content.lower() or "@everyone" in content.lower()):
         return
 
-    user_info = users_memory.get(user_id, {})
-    if isinstance(user_info, dict):
-        if user_id == "929347823693070387":
-            content += f"\n(User info: {user_info.get('info','')})"
-        else:
-            content += f"\n(User info: {user_info.get('info','')} — use only if relevant.)"
+    user_info = users_memory.get(user_id, "")
+    content += f"\n(User info: {user_info})" if user_info else ""
 
     fact = search_fact(content) if is_fact_question(content) else ""
 
