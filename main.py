@@ -121,7 +121,7 @@ async def attention_chance_cmd(interaction: discord.Interaction, value: int):
 
 def generate_birthday_message(name, is_wife=False):
     if is_wife:
-        name = random.choice(["Баклажанчик", "Солнышко", "Дорогая", "Милашка"])
+        name = random.choice(["Баклажанчик", "Солнышко", "Дорогая", "Бусинка"])
     return f"*softly steps closer*\n**HAPPY BIRTHDAY, {name.upper()}!**\n*Wishing you a good day.*"
 
 @tasks.loop(hours=24)
