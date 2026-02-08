@@ -10,7 +10,7 @@ import aiohttp  # для async запросов
 from duckduckgo_search import ddg  # pip install duckduckgo-search
 
 # ================== НАСТРОЙКИ ==================
-MAX_CONTEXT_TOKENS = 60000
+MAX_CONTEXT_TOKENS = 50000
 MAX_RESPONSE_SENTENCES = 6
 attention_chance = 2
 CONTEXT_TTL_DAYS = 4
