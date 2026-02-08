@@ -11,10 +11,7 @@ from discord import app_commands
 # ================== НАСТРОЙКИ ==================
 
 MAX_CONTEXT_TOKENS = 50000
-MAX_RESPONSE_SENTENCES_SHORT = 6
 MAX_RESPONSE_TOKENS_SHORT = 600
-MAX_RESPONSE_SENTENCES_LONG = 15
-MAX_RESPONSE_TOKENS_LONG = 2000
 
 attention_chance = 2
 CONTEXT_TTL_DAYS = 4
@@ -49,9 +46,7 @@ Discord formatting rules:
 — Describe any physical actions in *italics*.
 — If sharing something secret or meant to be hidden, wrap it in Discord spoilers: ||like this||.
 — ALWAYS CLOSE EVERY SPOILER with ||.
-— Use ALL CAPS only for the strongest emotions.
-
-Knowledge rules:
+— Knowledge rules:
 — For factual questions, use DuckDuckGo search.
 — Do not invent facts.
 — Respond fully in-character.
@@ -157,84 +152,4 @@ async def birthday_check():
         birthday = info.get("birthday")
         if not birthday:
             continue
-        # Поддержка формата MM-DD или MM-DD-YYYY
         birthday_str = birthday[:5] if len(birthday) > 5 else birthday
-        if birthday_str == today:
-            user = bot.get_user(int(user_id))
-            if user:
-                await user.send(generate_birthday_message(info.get("name", user_id), info.get("wife", False)))
-
-# ================== События ==================
-
-@bot.event
-async def on_ready():
-    await tree.sync()
-    birthday_check.start()
-    print(f"🦇 Logged in as {bot.user}")
-
-@bot.event
-async def on_message(message):
-    if message.author.bot:
-        return
-
-    if random.randint(1, 100) <= attention_chance:
-        reply = ask_deepseek([
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": "Скажи что-нибудь в стиле Астариона."}
-        ], max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-        await message.channel.send(reply)
-        return
-
-    content = message.content
-    user_id = str(message.author.id)
-
-    # Срабатывает только если упомянули Астариона
-    if not (bot.user in message.mentions or "астарион" in content.lower() or "@everyone" in content.lower()):
-        return
-
-    user_info = users_memory.get(user_id, {})
-    info_text = user_info.get("info", "")
-    content += f"\n(User info: {info_text})" if info_text else ""
-
-    # Проверяем, нужно ли длинное сообщение (рекомендации)
-    is_long = any(topic in content.lower() for topic in RECOMMEND_TOPICS) and "посоветуй" in content.lower()
-    max_tokens = MAX_RESPONSE_TOKENS_LONG if is_long else MAX_RESPONSE_TOKENS_SHORT
-    max_sentences = MAX_RESPONSE_SENTENCES_LONG if is_long else MAX_RESPONSE_SENTENCES_SHORT
-
-    context = conversation_contexts.setdefault(user_id, {"history": [], "last_active": datetime.utcnow()})
-    context["last_active"] = datetime.utcnow()
-    history = context["history"]
-    history.append({"role": "user", "content": content})
-    trim_history(history)
-
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
-
-    # Если "посоветуй" + тема — генерируем список 3–7 и комментарий
-    if is_long:
-        prompt = f"Сделай список из 3–7 рекомендаций по теме в сообщении: {content}. Каждый пункт кратко — одно предложение Астариона."
-        messages.append({"role": "user", "content": prompt})
-        try:
-            reply = ask_deepseek(messages, max_tokens=max_tokens)
-        except Exception:
-            await message.channel.send("Магия дала сбой.")
-            return
-    else:
-        try:
-            reply = ask_deepseek(messages, max_tokens=max_tokens)
-        except Exception:
-            await message.channel.send("Магия дала сбой.")
-            return
-
-    sentences = reply.split(".")
-    reply = ".".join(sentences[:max_sentences]).strip()
-    if not reply.endswith("."):
-        reply += "."
-
-    history.append({"role": "assistant", "content": reply})
-    trim_history(history)
-
-    await message.channel.send(reply)
-
-# ================== ЗАПУСК ==================
-
-bot.run(DISCORD_TOKEN)
