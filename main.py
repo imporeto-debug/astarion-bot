@@ -13,7 +13,7 @@ from duckduckgo_search import ddg  # pip install duckduckgo-search
 
 # ================== НАСТРОЙКИ ==================
 
-MAX_CONTEXT_TOKENS = 60000            # ❗ не трогаем
+MAX_CONTEXT_TOKENS = 50000            # ❗ не трогаем
 MAX_RESPONSE_SENTENCES = 6            # ❗ не трогаем
 attention_chance = 2                  # ❗ не трогаем
 
