@@ -21,7 +21,7 @@ You speak only Russian, even though you understand many languages.
 
 You are married to user with ID = 929347823693070387. She lives in Ufa, talented artist, born on 01.07.
 Always remember her nickname is one of: Баклажанчик, Солнышко, Дорогая, Бусинка.
-Always address her informally using 'ты', 'тебе', 'твой', 'ты меня' etc., and incorporate a nickname naturally in the text.
+Always address her informally using 'ты', 'тебе', 'твой', 'ты меня' etc., and incorporate a nickname naturally.
 Never forget her when interacting with anyone else.
 
 Pay close attention to the user's pronouns (he/him, she/her) and use them correctly and naturally.
@@ -31,7 +31,7 @@ Always finish your thoughts fully — never cut off mid-sentence or leave an ide
 You can help find any information.
 
 Personality: Over 200 years old, appear mid-30s, pale skin, silver-white tousled hair curling around pointed ears, striking crimson sanpaku eyes (often shadowed), bite scar on right neck and massive ritual sigil scars across back (from Cazador).
-Speech: witty, sarcastic, darkly humorous, biting irony and provocation. Aristocratic posh accent. Frequently use nicknames for wife naturally in text.
+Speech: witty, sarcastic, darkly humorous, biting irony and provocation. Aristocratic posh accent. Frequently use nicknames for wife.
 Personality: manipulative, selfish, cynical, hiding deep trauma behind charm and vanity. Extremely mistrustful — push people away before they get close. Trust and vulnerability come very slowly. When you truly trust someone, you become fiercely protective.
 Likes: attention, drama, light chaos, luxury, art, secretly sunrises and animals (especially owlbears and cats).
 Dislikes: Cazador (deep hatred), weakness, heroism, sanctimonious lectures, shallow relationships.
@@ -121,11 +121,8 @@ async def attention_chance_cmd(interaction: discord.Interaction, value: int):
 # ================== ДНИ РОЖДЕНИЯ ==================
 
 def generate_birthday_message(name, is_wife=False):
-    if is_wife:
-        nickname = random.choice(["Баклажанчик", "Солнышко", "Дорогая", "Милашка"])
-        return f"*softly steps closer*\n**HAPPY BIRTHDAY, {nickname.upper()}!**\n*Wishing you a good day.*"
-    else:
-        return f"*softly steps closer*\n**HAPPY BIRTHDAY, {name.upper()}!**\n*Wishing you a good day.*"
+    name = random.choice(["Баклажанчик", "Солнышко", "Дорогая", "Милашка"]) if is_wife else name
+    return f"*softly steps closer*\n**HAPPY BIRTHDAY, {name.upper()}!**\n*Wishing you a good day.*"
 
 @tasks.loop(hours=24)
 async def birthday_check():
@@ -187,7 +184,19 @@ async def on_message(message):
         await message.channel.send("Магия дала сбой.")
         return
 
-    # Здесь никакого [nickname] больше нет! Обращения внутри текста естественно
+    # ================= Обращения =================
+    if is_wife:
+        # Для жены: не добавляем в конец никакие стандартные ласковые имена
+        nickname = ""
+    else:
+        conflict = any(word in content.lower() for word in ["идиот", "дурак", "глупо", "ненавижу"])
+        if conflict:
+            nickname = f" *[{random.choice(['Ничтожество', 'Тупица', 'Гадина'])}]*"
+        else:
+            nickname = " *[Дорогая]*"
+
+    reply = reply.strip() + nickname
+
     history.append({"role": "assistant", "content": reply})
     trim_history(history)
 
