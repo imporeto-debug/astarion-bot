@@ -200,7 +200,6 @@ async def on_message(message):
         else:
             nickname = "Дорогая"
         # Вставляем в начале или где удобно
-        reply = f"{reply} {nickname}"
 
     history.append({"role": "assistant", "content": reply})
     trim_history(history)
