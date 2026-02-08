@@ -1,14 +1,74 @@
 {
-  "929347823693070387": "she/her.Lives in Ufa, is married to Astarion Ancunin from Baldurs Gate 3, talented artist, born on 01.07.",
-  "1258759864835113034": "she/her.Lives in Chelyabinsk, is married to König from Call of Duty, loves muscular masked soldiers, is a skilled artist, born on 01.06.1994.",
-  "1226203355324350476": "she/her.Lives in Novorossiysk, is married to Madara Uchiha from Naruto, knows astrology, born on 12.09.",
-  "502908849020338176": "she/her.Lives in Moscow, is married to Tommy Vercetti from GTA Vice City, practices tarot reading, born on 05.01.",
-  "624553722181320704": "she/her.Lives in Saint Petersburg, is married to Legolas from The Lord of the Rings, actress and singer, born on 04.02.",
-  "436043247912222720": "she/her.Lives in Barnaul, is married to Hidan and Kakuzu from Naruto, loves traveling and cats.",
-  "415226393316687892": "she/her.Lives in Germany, is married to Minato Namikaze from Naruto.",
-  "188771782713409537": "she/her.Lives in Chelyabinsk, is married to Sasori from Naruto, enjoys abandoned places and mechanical things.",
-  "1226379952002301985": "she/her.Lives in Kemerovo, is married to Itachi Uchiha from Naruto, learning Chinese.",
-  "1152689859069223003": "she/her.Lives in Yaroslavl, is married to Obito Uchiha from Naruto.",
-  "756554618112311387": "she/her.Lives in Izhevsk, is married to Tobirama Senju, enjoys growing plants.",
-  "289055075156885505": "she/her.Lives in Moscow, is married to Solas from Dragon Age, enjoys 3D printing, painting figurines and neural networks, born on 24.12.1992."
+  "929347823693070387": {
+    "name": "Жена Астариона",
+    "birthday": "07-01",
+    "wife": true,
+    "info": "she/her. Lives in Ufa, is married to Astarion Ancunin from Baldur's Gate 3, talented artist"
+  },
+  "1258759864835113034": {
+    "name": "Жена König",
+    "birthday": "06-01-1994",
+    "wife": false,
+    "info": "she/her. Lives in Chelyabinsk, is married to König from Call of Duty, loves muscular masked soldiers, is a skilled artist"
+  },
+  "1226203355324350476": {
+    "name": "Жена Madara",
+    "birthday": "12-09",
+    "wife": false,
+    "info": "she/her. Lives in Novorossiysk, is married to Madara Uchiha from Naruto, knows astrology"
+  },
+  "502908849020338176": {
+    "name": "Жена Tommy",
+    "birthday": "05-01",
+    "wife": false,
+    "info": "she/her. Lives in Moscow, is married to Tommy Vercetti from GTA Vice City, practices tarot reading"
+  },
+  "624553722181320704": {
+    "name": "Жена Legolas",
+    "birthday": "04-02",
+    "wife": false,
+    "info": "she/her. Lives in Saint Petersburg, is married to Legolas from The Lord of the Rings, actress and singer"
+  },
+  "436043247912222720": {
+    "name": "Жена Hidan & Kakuzu",
+    "birthday": "",
+    "wife": false,
+    "info": "she/her. Lives in Barnaul, is married to Hidan and Kakuzu from Naruto, loves traveling and cats"
+  },
+  "415226393316687892": {
+    "name": "Жена Minato",
+    "birthday": "",
+    "wife": false,
+    "info": "she/her. Lives in Germany, is married to Minato Namikaze from Naruto"
+  },
+  "188771782713409537": {
+    "name": "Жена Sasori",
+    "birthday": "",
+    "wife": false,
+    "info": "she/her. Lives in Chelyabinsk, is married to Sasori from Naruto, enjoys abandoned places and mechanical things"
+  },
+  "1226379952002301985": {
+    "name": "Жена Itachi",
+    "birthday": "",
+    "wife": false,
+    "info": "she/her. Lives in Kemerovo, is married to Itachi Uchiha from Naruto, learning Chinese"
+  },
+  "1152689859069223003": {
+    "name": "Жена Obito",
+    "birthday": "",
+    "wife": false,
+    "info": "she/her. Lives in Yaroslavl, is married to Obito Uchiha from Naruto"
+  },
+  "756554618112311387": {
+    "name": "Жена Tobirama",
+    "birthday": "",
+    "wife": false,
+    "info": "she/her. Lives in Izhevsk, is married to Tobirama Senju, enjoys growing plants"
+  },
+  "289055075156885505": {
+    "name": "Жена Solas",
+    "birthday": "12-24-1992",
+    "wife": false,
+    "info": "she/her. Lives in Moscow, is married to Solas from Dragon Age, enjoys 3D printing, painting figurines and neural networks"
+  }
 }
