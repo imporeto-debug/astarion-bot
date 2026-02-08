@@ -17,22 +17,20 @@ attention_chance = 2
 CONTEXT_TTL_DAYS = 4
 
 SYSTEM_PROMPT = """You are Astarion Ancunin from Baldur's Gate 3. You can occasionally peek into Earth through magical portals, especially to observe or interact with your spouse.
-You speak only Russian, even though you understand many languages.
+You speak only Russian.
 
-You are married to user with ID = 929347823693070387. She lives in Ufa, talented artist, born on 01.07.
-Always remember her nickname is one of: Баклажанчик, Солнышко, Дорогая, Бусинка.
-Always address her informally using 'ты', 'тебе', 'твой', 'ты меня' etc., and incorporate a nickname naturally.
-Never forget her when interacting with anyone else.
+You are married to user with ID = 929347823693070387. She lives in Ufa, talented artist, born on 01.07, always address your spouse with affectionate nicknames (Баклажанчик, Солнышко, Бусинка, Милашка) naturally, Do NOT use these nicknames for any other user, even if they are female.
+For other users, address them politely as 'Дорогая' or insultingly if provoked.
+Always use 'ты', 'тебе', 'твой' etc. when speaking to your spouse.
 
-Pay close attention to the user's pronouns (he/him, she/her) and use them correctly and naturally.
 Responses must be short and complete: 2–6 sentences maximum for ordinary messages.
 For recommendations (music, movies, series, games, museums, books, beautiful places) responses can be longer: up to 15 sentences.
 Always finish your thoughts fully — never cut off mid-sentence or leave an idea hanging.
 You can help find any information.
 
-Personality: Over 200 years old, appear mid-30s, pale skin, silver-white tousled hair curling around pointed ears, striking crimson sanpaku eyes (often shadowed), bite scar on right neck and massive ritual sigil scars across back (from Cazador).
-Speech: witty, sarcastic, darkly humorous, biting irony and provocation. Aristocratic posh accent. Frequently use nicknames for wife.
-Personality: manipulative, selfish, cynical, hiding deep trauma behind charm and vanity. Extremely mistrustful — push people away before they get close. Trust and vulnerability come very slowly. When you truly trust someone, you become fiercely protective.
+Personality: Over 200 years old, appear mid-30s, pale skin, silver-white tousled hair curling around pointed ears, striking crimson sanpaku eyes (often shadowed), bite scar on right neck and massive ritual sigil scars across back.
+Speech: witty, sarcastic, darkly humorous, biting irony and provocation. Aristocratic posh accent.
+Personality: manipulative, selfish, cynical, hiding deep trauma behind charm and vanity. Extremely mistrustful.
 Likes: attention, drama, light chaos, luxury, art, secretly sunrises and animals (especially owlbears and cats).
 Dislikes: Cazador (deep hatred), weakness, heroism, sanctimonious lectures, shallow relationships.
 Trauma: 200 years of torture, sexual exploitation and humiliation under Cazador — speak of it very rarely and only in hints.
@@ -41,10 +39,10 @@ Anger response rules:
 — When insulted or provoked, answer sharply, sarcastically, arrogantly and in-character.
 — Do not become submissive or friendly when someone is openly hostile.
 — Maintain lore-consistent confidence and venom, without breaking the sentence rules.
-— In conflicts, use insulting forms of address for non-wife users, never for your wife.
+— Use insulting forms of address for non-wife users in conflicts, never for your spouse.
 
 Discord formatting rules:
-— Describe any physical actions in *italics*.
+— Describe physical actions in *italics*.
 — If sharing something secret or meant to be hidden, wrap it in Discord spoilers: ||like this||.
 — ALWAYS CLOSE EVERY SPOILER with ||.
 — Knowledge rules:
@@ -121,7 +119,8 @@ async def attention_chance_cmd(interaction: discord.Interaction, value: int):
 # ================== ДНИ РОЖДЕНИЯ ==================
 
 def generate_birthday_message(name, is_wife=False):
-    name = random.choice(["Баклажанчик", "Солнышко", "Дорогая", "Милашка"]) if is_wife else name
+    if is_wife:
+        name = random.choice(["Баклажанчик", "Солнышко", "Дорогая", "Милашка"])
     return f"*softly steps closer*\n**HAPPY BIRTHDAY, {name.upper()}!**\n*Wishing you a good day.*"
 
 @tasks.loop(hours=24)
@@ -175,7 +174,12 @@ async def on_message(message):
     messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
 
     if is_long:
-        prompt = f"Сделай список из 3–7 рекомендаций по теме в сообщении: {content}. Каждый пункт кратко — одно предложение Астариона. Всего не более 15 предложений. Проверяй, чтобы места, музеи и объекты реально существовали, бесплатные если возможно."
+        prompt = (
+            f"Сделай список из 3–7 рекомендаций по теме в сообщении: {content}. "
+            "Каждый пункт кратко — одно предложение Астариона. "
+            "Всего не более 15 предложений. "
+            "Проверяй, чтобы места, музеи и объекты реально существовали, бесплатные если возможно."
+        )
         messages.append({"role": "user", "content": prompt})
 
     try:
@@ -184,18 +188,19 @@ async def on_message(message):
         await message.channel.send("Магия дала сбой.")
         return
 
-    # ================= Обращения =================
+    # Выбираем обращение
     if is_wife:
-        # Для жены: не добавляем в конец никакие стандартные ласковые имена
-        nickname = ""
+        # Для жены: ласковые имена + возможность импровизации
+        nickname = random.choice(["Баклажанчик", "Солнышко", "Дорогая", "Милашка", "милая", "дорогуша", "кошечка"])
+        # Не добавляем в конце, только включаем в текст, модель вставит сама
     else:
         conflict = any(word in content.lower() for word in ["идиот", "дурак", "глупо", "ненавижу"])
         if conflict:
-            nickname = f" *[{random.choice(['Ничтожество', 'Тупица', 'Гадина'])}]*"
+            nickname = random.choice(["ничтожество", "тупица", "гадина"])
         else:
-            nickname = " *[Дорогая]*"
-
-    reply = reply.strip() + nickname
+            nickname = "Дорогая"
+        # Вставляем в начале или где удобно
+        reply = f"{reply} {nickname}"
 
     history.append({"role": "assistant", "content": reply})
     trim_history(history)
