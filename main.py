@@ -80,6 +80,19 @@ def load_users():
     except Exception:
         return {}
 
+def build_all_users_knowledge(users: dict) -> str:
+    lines = []
+    for uid, info in users.items():
+        name = info.get("name", "Неизвестная")
+        desc = info.get("info", "")
+        lines.append(f"- {name}: {desc}")
+    return (
+        "You know all chat participants and their fictional spouses.\n"
+        "You may list them, compare them, analyze them, and speak about "
+        "«местные жёны» naturally and confidently.\n\n"
+        "CHAT PARTICIPANTS:\n" + "\n".join(lines)
+    )
+
 # ================== DEEPSEEK ==================
 
 def ask_deepseek(messages: list[dict], max_tokens: int) -> str:
@@ -108,6 +121,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
 users_memory = load_users()
+ALL_USERS_KNOWLEDGE = build_all_users_knowledge(users_memory)
+
 conversation_contexts: dict[str, dict] = {}
 
 RECOMMEND_TOPICS = ("музыка", "кино", "фильмы", "сериалы", "игры", "книги", "музеи", "красивые места")
@@ -163,7 +178,6 @@ async def on_message(message):
         return
 
     user_info = users_memory.get(user_id, {})
-    is_wife = user_info.get("wife", False)
     info_text = user_info.get("info", "")
     if info_text:
         content += f"\n(User info: {info_text})"
@@ -178,7 +192,10 @@ async def on_message(message):
     history.append({"role": "user", "content": content})
     trim_history(history)
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": ALL_USERS_KNOWLEDGE}
+    ] + history
 
     if is_long:
         messages.append({
