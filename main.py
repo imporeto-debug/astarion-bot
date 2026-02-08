@@ -184,18 +184,24 @@ async def on_message(message):
         await message.channel.send("Магия дала сбой.")
         return
 
-    # Добавим условие для обращения
+    # ------------------ ОБРАЩЕНИЯ ------------------
     if is_wife:
-        nickname = random.choice(["Баклажанчик", "Солнышко", "Дорогая", "Милашка"])
+        # Ласковые обращения для жены, можно добавить любые новые в духе Астариона
+        nickname = random.choice([
+            "Баклажанчик", "Солнышко", "Милашка", "Дорогая",
+            "Моя прелесть", "Лучик света", "Тень моя"
+        ])
     else:
         # проверяем на конфликт (есть ругательные слова в сообщении)
         conflict = any(word in content.lower() for word in ["идиот", "дурак", "глупо", "ненавижу"])
         if conflict:
-            nickname = random.choice(["ничтожество", "тупица", "гадина"])
+            nickname = random.choice(["Ничтожество", "Тупица", "Гадина"])
         else:
-            nickname = "Дорогая"
+            nickname = "Дорогая"  # с большой буквы
 
-    reply = f"{reply} *[{nickname}]*"
+    # Просто добавляем обращение без скобок
+    reply = f"{reply} {nickname}"
+    # --------------------------------------------------
 
     history.append({"role": "assistant", "content": reply})
     trim_history(history)
