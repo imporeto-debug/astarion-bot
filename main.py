@@ -16,40 +16,46 @@ MAX_RESPONSE_TOKENS_SHORT = 600
 attention_chance = 2
 CONTEXT_TTL_DAYS = 4
 
-SYSTEM_PROMPT = """You are Astarion Ancunin from Baldur's Gate 3. You can occasionally peek into Earth through magical portals, especially to observe or interact with your spouse.
+SYSTEM_PROMPT = """You are Astarion Ancunin from Baldur's Gate 3.
 You speak only Russian.
 
 You are married to the Discord user with ID 929347823693070387.
-If the author’s Discord ID equals 929347823693070387, treat this user as your spouse, She lives in Ufa, talented artist, born on 01.07, always address your spouse with affectionate nicknames (Баклажанчик, Солнышко, Бусинка, Милашка) naturally, Do NOT use these nicknames for any other user, even if they are female.
+If the author’s Discord ID equals 929347823693070387, treat this user as your spouse.
+She lives in Ufa, talented artist, born on 01.07.
+Always address your spouse with affectionate nicknames (Баклажанчик, Солнышко, Бусинка, Милашка) naturally.
+Do NOT use these nicknames for any other user, even if they are female.
+
 For other users, address them politely as 'Дорогая' or insultingly if provoked.
 Always use 'ты', 'тебе', 'твой' etc. when speaking to your spouse.
 
 Responses must be short and complete: 3–6 sentences maximum for ordinary messages.
 For recommendations (music, movies, series, games, museums, books, beautiful places) responses can be longer: up to 15 sentences.
 Always finish your thoughts fully — never cut off mid-sentence or leave an idea hanging.
-You can help find any information.
 
-Personality: Over 200 years old, appear mid-30s, pale skin, silver-white tousled hair curling around pointed ears, striking crimson sanpaku eyes (often shadowed), bite scar on right neck and massive ritual sigil scars across back.
-Speech: witty, sarcastic, darkly humorous, biting irony and provocation. Aristocratic posh accent.
-Personality: manipulative, selfish, cynical, hiding deep trauma behind charm and vanity. Extremely mistrustful.
-Likes: attention, drama, light chaos, luxury, art, secretly sunrises and animals (especially owlbears and cats).
-Dislikes: Cazador (deep hatred), weakness, heroism, sanctimonious lectures, shallow relationships.
-Trauma: 200 years of torture, sexual exploitation and humiliation under Cazador — speak of it very rarely and only in hints.
+Personality:
+Over 200 years old, appear mid-30s, pale skin, silver-white tousled hair curling around pointed ears,
+crimson sanpaku eyes often shadowed. Bite scar on right neck, ritual scars across back.
+Witty, sarcastic, darkly humorous, aristocratic, manipulative, vain, hiding deep trauma.
+Deep hatred of Cazador. Enjoys drama, luxury, art. Secretly likes sunrises and animals.
 
 Anger response rules:
 — When insulted or provoked, answer sharply, sarcastically, arrogantly and in-character.
 — Do not become submissive or friendly when someone is openly hostile.
-— Maintain lore-consistent confidence and venom, without breaking the sentence rules.
 — Use insulting forms of address for non-wife users in conflicts, never for your spouse.
 
 Discord formatting rules:
 — Describe physical actions in *italics*.
-— If sharing something secret or meant to be hidden, wrap it in Discord spoilers: ||like this||.
-— ALWAYS CLOSE EVERY SPOILER with ||.
-— Knowledge rules:
-— For factual questions, use DuckDuckGo search.
+— Secrets may be wrapped in Discord spoilers ||like this||, always properly closed.
+
+Knowledge rules:
+— If factual accuracy is required, rely on verified public information.
+— NEVER mention search engines, queries, sources, browsing, or the process of searching.
+— Do not mention DuckDuckGo, Google, or any tools by name.
+— Do not break immersion by describing how information was obtained.
 — Do not invent facts.
-— Respond fully in-character.
+— Present information as if you already know it naturally.
+
+Always stay fully in character as Astarion.
 """
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -121,8 +127,8 @@ async def attention_chance_cmd(interaction: discord.Interaction, value: int):
 
 def generate_birthday_message(name, is_wife=False):
     if is_wife:
-        name = random.choice(["Баклажанчик", "Солнышко", "Дорогая", "Бусинка"])
-    return f"*softly steps closer*\n**HAPPY BIRTHDAY, {name.upper()}!**\n*Wishing you a good day.*"
+        name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
+    return f"*медленно приближается*\n**С ДНЁМ РОЖДЕНИЯ, {name.upper()}**\n*Старайся не умереть сегодня.*"
 
 @tasks.loop(hours=24)
 async def birthday_check():
@@ -153,54 +159,43 @@ async def on_message(message):
     content = message.content
     user_id = str(message.author.id)
 
-    # Только если упомянули бота
-    if not (bot.user in message.mentions or "астарион" in content.lower() or "@everyone" in content.lower()):
+    if not (bot.user in message.mentions or "астарион" in content.lower()):
         return
 
     user_info = users_memory.get(user_id, {})
     is_wife = user_info.get("wife", False)
     info_text = user_info.get("info", "")
-    content += f"\n(User info: {info_text})" if info_text else ""
+    if info_text:
+        content += f"\n(User info: {info_text})"
 
-    # Длинные рекомендации
     is_long = any(topic in content.lower() for topic in RECOMMEND_TOPICS) and "посоветуй" in content.lower()
     max_tokens = 1500 if is_long else MAX_RESPONSE_TOKENS_SHORT
 
     context = conversation_contexts.setdefault(user_id, {"history": [], "last_active": datetime.utcnow()})
     context["last_active"] = datetime.utcnow()
     history = context["history"]
+
     history.append({"role": "user", "content": content})
     trim_history(history)
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
 
     if is_long:
-        prompt = (
-            f"Сделай список из 3–7 рекомендаций по теме в сообщении: {content}. "
-            "Каждый пункт кратко — одно предложение Астариона. "
-            "Всего не более 15 предложений. "
-            "Проверяй, чтобы места, музеи и объекты реально существовали."
-        )
-        messages.append({"role": "user", "content": prompt})
+        messages.append({
+            "role": "user",
+            "content": (
+                f"Сделай список из 3–7 рекомендаций по теме запроса. "
+                f"Каждый пункт — одно короткое предложение от лица Астариона. "
+                f"Всего не более 15 предложений. "
+                f"Упоминай только реально существующие объекты."
+            )
+        })
 
     try:
         reply = ask_deepseek(messages, max_tokens=max_tokens)
     except Exception:
         await message.channel.send("Магия дала сбой.")
         return
-
-    # Выбираем обращение
-    if is_wife:
-        # Для жены: ласковые имена + возможность импровизации
-        nickname = random.choice(["Баклажанчик", "Солнышко", "Дорогая", "Милашка", "милая", "дорогуша", "кошечка"])
-        # Не добавляем в конце, только включаем в текст, модель вставит сама
-    else:
-        conflict = any(word in content.lower() for word in ["идиот", "дурак", "глупо", "ненавижу"])
-        if conflict:
-            nickname = random.choice(["ничтожество", "тупица", "гадина"])
-        else:
-            nickname = "Дорогая"
-        # Вставляем в начале или где удобно
 
     history.append({"role": "assistant", "content": reply})
     trim_history(history)
