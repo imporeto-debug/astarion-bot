@@ -1,7 +1,7 @@
 import os
 import json
 import random
-from datetime import date
+from datetime import date, datetime
 import aiohttp
 import asyncio
 
@@ -94,8 +94,9 @@ async def ask_deepseek(messages: list[dict], max_tokens: int):
         "top_k": 50,
         "max_tokens": max_tokens
     }
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, headers=headers, json=payload, timeout=60) as resp:
+    timeout = aiohttp.ClientTimeout(total=60)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.post(url, headers=headers, json=payload) as resp:
             resp.raise_for_status()
             data = await resp.json()
             return data["choices"][0]["message"]["content"]
@@ -110,7 +111,8 @@ async def duck_search(query: str):
         "no_redirect": "1",
         "no_html": "1"
     }
-    async with aiohttp.ClientSession() as session:
+    timeout = aiohttp.ClientTimeout(total=30)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.get(url, params=params) as resp:
             if resp.status != 200:
                 return None
@@ -162,12 +164,12 @@ def generate_birthday_message(name, is_wife=False):
 
 @tasks.loop(hours=24)
 async def birthday_check():
-    today = date.today().strftime("%d-%m")  # формат дата-месяц
+    today = date.today().strftime("%d-%m")
     for user_id, info in users_memory.items():
         birthday = info.get("birthday")
         if not birthday:
             continue
-        birthday_str = birthday[:5]  # берем только dd-mm
+        birthday_str = birthday[:5]
         if birthday_str == today:
             user = bot.get_user(int(user_id))
             if user:
@@ -179,7 +181,6 @@ async def birthday_check():
 async def on_ready():
     birthday_check.start()
     print(f"🦇 Logged in as {bot.user}")
-
 
 @bot.event
 async def on_message(message):
@@ -216,7 +217,7 @@ async def on_message(message):
                 random_reply = await ask_deepseek(small_messages, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
                 await target.reply(random_reply, mention_author=False)
             except Exception as e:
-                print(f"Error in random reply: {e}")
+                print(f"DeepSeek random reply error: {e}")
 
     content = message.content
     user_id = str(message.author.id)
@@ -254,7 +255,8 @@ async def on_message(message):
                 reply = await ask_deepseek(deepseek_prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
                 await message.reply(reply, mention_author=False)
             except Exception as e:
-                print(f"Error in advice reply: {e}")
+                print(f"DeepSeek advice error: {e}")
 
+# ================== ЗАПУСК ==================
 
 bot.run(DISCORD_TOKEN)
