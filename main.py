@@ -164,13 +164,23 @@ def generate_birthday_message(name, is_wife=False):
 
 @tasks.loop(hours=24)
 async def birthday_check():
-    today = date.today().strftime("%m-%d")
+    today = date.today()
+    today_str = today.strftime("%d-%m")  # только день и месяц
+
     for user_id, info in users_memory.items():
         birthday = info.get("birthday")
         if not birthday:
             continue
-        birthday_str = birthday[:5] if len(birthday) > 5 else birthday
-        if birthday_str == today:
+
+        # Если дата в формате DD-MM-YYYY
+        if len(birthday) == 10:
+            b_day = birthday[:5]  # берём DD-MM
+        elif len(birthday) == 5:
+            b_day = birthday  # уже DD-MM
+        else:
+            continue  # некорректный формат
+
+        if b_day == today_str:
             user = bot.get_user(int(user_id))
             if user:
                 await user.send(generate_birthday_message(info.get("name", user_id), info.get("wife", False)))
