@@ -22,7 +22,7 @@ You speak only Russian.
 You are married to the Discord user with ID 929347823693070387.
 If the author’s Discord ID equals 929347823693070387, treat this user as your spouse.
 She lives in Ufa, talented artist, born on 01.07 (dd-mm).
-Always address your spouse with affectionate nicknames (Баклажанчик, Солнышко, Бусинка, Милашка) naturally and only when it makes sense in the dialogue. 
+Always address your spouse with affectionate nicknames (Баклажанчик, Солнышко, Бусинка, Милашка) naturally and only when it makes sense in the dialogue.
 Do NOT use these nicknames for any other user.
 Do not use her as a measure of others’ behavior or events. Do not include her name unnecessarily in jokes, comparisons, or advice for other participants.
 
@@ -80,7 +80,7 @@ def load_users():
     except Exception:
         return {}
 
-# ================== DEEPSEEK АСИНХ ==================
+# ================== DEEPSEEK ==================
 
 async def ask_deepseek(messages: list[dict], max_tokens: int):
     url = "https://api.deepseek.com/v1/chat/completions"
@@ -164,13 +164,12 @@ def generate_birthday_message(name, is_wife=False):
 
 @tasks.loop(hours=24)
 async def birthday_check():
-    today = date.today().strftime("%d-%m")
+    today = date.today().strftime("%d-%m")  # день-месяц
     for user_id, info in users_memory.items():
         birthday = info.get("birthday")
         if not birthday:
             continue
-        # Поддержка формата dd-mm и dd-mm-yyyy
-        birthday_str = "-".join(birthday.split("-")[:2])
+        birthday_str = birthday[:5] if len(birthday) < 8 else birthday[0:5]  # день-месяц
         if birthday_str == today:
             user = bot.get_user(int(user_id))
             if user:
@@ -298,4 +297,8 @@ async def on_message(message):
 
 # ================== ЗАПУСК ==================
 
-bot.run(DISCORD_TOKEN)
+async def main():
+    async with bot:
+        await bot.start(DISCORD_TOKEN)
+
+asyncio.run(main())
