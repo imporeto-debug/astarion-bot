@@ -57,9 +57,10 @@ Always stay fully in character as Astarion.
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+TMDB_API_KEY = os.getenv("TMDB_API_KEY")  # ключ TMDb в переменных среды
 
-if not DISCORD_TOKEN or not DEEPSEEK_API_KEY:
-    raise RuntimeError("Missing DISCORD_TOKEN or DEEPSEEK_API_KEY")
+if not DISCORD_TOKEN or not DEEPSEEK_API_KEY or not TMDB_API_KEY:
+    raise RuntimeError("Missing DISCORD_TOKEN, DEEPSEEK_API_KEY or TMDB_API_KEY")
 
 # ================== ВСПОМОГАТЕЛЬНОЕ ==================
 
@@ -144,6 +145,44 @@ def parse_results(data):
             break
     return res
 
+# ================== TMDb ==================
+
+async def tmdb_search(query: str, category: str):
+    url_map = {
+        "movie": f"https://api.themoviedb.org/3/search/movie",
+        "tv": f"https://api.themoviedb.org/3/search/tv",
+        "person": f"https://api.themoviedb.org/3/search/person"
+    }
+    if category not in url_map:
+        return []
+
+    params = {
+        "api_key": TMDB_API_KEY,
+        "query": query,
+        "language": "ru-RU"
+    }
+    timeout = aiohttp.ClientTimeout(total=15)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        try:
+            async with session.get(url_map[category], params=params) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+                return data.get("results", [])
+        except Exception:
+            return []
+
+def format_tmdb_results(items, category):
+    res = []
+    for i in items[:5]:
+        if category in ["movie", "tv"]:
+            title = i.get("title") or i.get("name")
+            year = (i.get("release_date") or i.get("first_air_date") or "")[:4]
+            res.append(f"{title} ({year})" if year else title)
+        elif category == "person":
+            res.append(i.get("name"))
+    return res
+
 # ================== DISCORD ==================
 
 intents = discord.Intents.default()
@@ -196,6 +235,9 @@ async def on_message(message):
     if message.author.bot:
         return
 
+    content = message.content.lower()
+    user_id = str(message.author.id)
+
     # ====== СЛУЧАЙНЫЙ ОТВЕТ ======
     if random.randint(1, 100) <= attention_chance:
         msgs = []
@@ -224,8 +266,6 @@ async def on_message(message):
             if random_reply:
                 await target.reply(random_reply, mention_author=False)
 
-    content = message.content.lower()
-
     # ====== "ПОСОВЕТУЙ" ======
     if "посоветуй" in content:
         found_topic = None
@@ -236,27 +276,45 @@ async def on_message(message):
                 query = TOPIC_MAP[topic]
                 break
 
-        if found_topic and query:
+        if not query:
+            await message.reply("Не понял тему для совета.", mention_author=False)
+            return
+
+        # ====== TMDb для кино/сериалов/актеров ======
+        tmdb_results = []
+        if found_topic in ["кино", "фильмы"]:
+            movies = await tmdb_search(query, "movie")
+            tmdb_results = format_tmdb_results(movies, "movie")
+        elif found_topic == "сериалы":
+            tvs = await tmdb_search(query, "tv")
+            tmdb_results = format_tmdb_results(tvs, "tv")
+        elif found_topic in ["актер", "актриса"]:
+            persons = await tmdb_search(query, "person")
+            tmdb_results = format_tmdb_results(persons, "person")
+
+        if tmdb_results:
+            formatted_list = "\n".join(f"• {r}" for r in tmdb_results)
+        else:
             data = await duck_search(query)
             results = parse_results(data)
+            formatted_list = "\n".join(f"• {r}" for r in results) if results else None
 
-            if not results:
-                await message.reply("Не нашёл ничего подходящего.", mention_author=False)
-                return
+        if not formatted_list:
+            await message.reply("Не нашёл ничего подходящего.", mention_author=False)
+            return
 
-            formatted_list = "\n".join(f"• {r}" for r in results)
-            deepseek_prompt = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content":
-                    f"Вот найденные реальные объекты по теме '{found_topic}':\n{formatted_list}\n\n"
-                    "Сделай список из 3–7 рекомендаций по теме запроса. "
-                    "Каждый пункт — одно короткое предложение от лица Астариона. "
-                    "Всего не более 15 предложений. "
-                    "Упоминай только реально существующие объекты."}
-            ]
-            reply = await ask_deepseek(deepseek_prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-            if reply:
-                await message.reply(reply, mention_author=False)
+        deepseek_prompt = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content":
+                f"Вот найденные реальные объекты по теме '{found_topic}':\n{formatted_list}\n\n"
+                "Сделай список из 3–7 рекомендаций по теме запроса. "
+                "Каждый пункт — одно короткое предложение от лица Астариона. "
+                "Всего не более 15 предложений. "
+                "Упоминай только реально существующие объекты."}
+        ]
+        reply = await ask_deepseek(deepseek_prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+        if reply:
+            await message.reply(reply, mention_author=False)
 
 # ================== ЗАПУСК БОТА ==================
 
