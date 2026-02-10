@@ -1,7 +1,7 @@
 import os
 import json
 import random
-from datetime import date, datetime
+from datetime import date
 import aiohttp
 import asyncio
 
@@ -215,8 +215,8 @@ async def on_message(message):
             try:
                 random_reply = await ask_deepseek(small_messages, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
                 await target.reply(random_reply, mention_author=False)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Error in random reply: {e}")
 
     content = message.content
     user_id = str(message.author.id)
@@ -252,3 +252,9 @@ async def on_message(message):
 
             try:
                 reply = await ask_deepseek(deepseek_prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+                await message.reply(reply, mention_author=False)
+            except Exception as e:
+                print(f"Error in advice reply: {e}")
+
+
+bot.run(DISCORD_TOKEN)
