@@ -1,7 +1,7 @@
 import os
 import json
 import random
-from datetime import date
+from datetime import date, datetime, time
 import asyncio
 import aiohttp
 
@@ -48,7 +48,7 @@ Discord formatting rules:
 Knowledge rules:
 — Always use the provided list of participants and their husbands to answer questions.
 — You can enumerate, compare, analyze and discuss 'местных жен'.
-— Do not invent names, occupations, cities, or other facts about participants.
+— Never invent names, occupations, cities, or other facts about participants.
 — Never mention search engines or how you got information.
 — Present information naturally as if you already know it.
 
@@ -60,6 +60,18 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
 if not DISCORD_TOKEN or not DEEPSEEK_API_KEY:
     raise RuntimeError("Missing DISCORD_TOKEN or DEEPSEEK_API_KEY")
+
+WIFE_ID = 929347823693070387
+WIFE_CHANNEL_ID = 1464226944345182289
+CELEBRATION_CHANNEL_ID = 1385344250291421357
+
+HOLIDAYS = {
+    "14-02": "День всех влюблённых",
+    "08-03": "Международный женский день",
+    "12-06": "День России",
+    "31-12": "Новый год",
+    "07-01": "Рождество"
+}
 
 # ================== ВСПОМОГАТЕЛЬНОЕ ==================
 
@@ -108,42 +120,6 @@ async def ask_deepseek(messages: list[dict], max_tokens: int):
         except Exception as e:
             return f"⚠ Неизвестная ошибка DeepSeek: {e}"
 
-# ================== DUCKDUCKGO ==================
-
-async def duck_search(query: str):
-    url = "https://api.duckduckgo.com/"
-    params = {
-        "q": query,
-        "format": "json",
-        "no_redirect": "1",
-        "no_html": "1"
-    }
-    timeout = aiohttp.ClientTimeout(total=15)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        try:
-            async with session.get(url, params=params) as resp:
-                if resp.status != 200:
-                    return None
-                return await resp.json()
-        except Exception:
-            return None
-
-def parse_results(data):
-    if not data or "RelatedTopics" not in data:
-        return []
-
-    res = []
-    for item in data["RelatedTopics"]:
-        if isinstance(item, dict) and "Text" in item:
-            res.append(item["Text"])
-        elif isinstance(item, dict) and "Topics" in item:
-            for sub in item["Topics"]:
-                if "Text" in sub:
-                    res.append(sub["Text"])
-        if len(res) >= 5:
-            break
-    return res
-
 # ================== DISCORD ==================
 
 intents = discord.Intents.default()
@@ -153,42 +129,63 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 users_memory = load_users()
 conversation_contexts: dict[str, dict] = {}
 
-RECOMMEND_TOPICS = ("музыка", "кино", "фильмы", "сериалы", "игры", "книги", "музеи", "красивые места")
-TOPIC_MAP = {
-    "музыка": "best music",
-    "кино": "best movies",
-    "фильмы": "best movies",
-    "сериалы": "best tv series",
-    "игры": "best games",
-    "книги": "best books",
-    "музеи": "best museums",
-    "красивые места": "best beautiful places"
-}
+# ================== ЖЕНА ==================
 
-# ================== ДНИ РОЖДЕНИЯ ==================
+async def send_wife_message(topic: str):
+    channel = bot.get_channel(WIFE_CHANNEL_ID)
+    if not channel:
+        return
+    prompt = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": (
+            f"Тема: {topic}. "
+            "Напиши сообщение полностью от лица Астариона. "
+            "Короткое, интересное, индивидуальное. "
+            "Никаких шаблонов, полностью уникальное. "
+            f"Упомяни <@{WIFE_ID}> естественно."
+        )}
+    ]
+    content = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+    await channel.send(f"<@{WIFE_ID}> {content}")
 
-def generate_birthday_message(name, is_wife=False):
-    if is_wife:
-        name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
-    return f"*медленно приближается*\n**С ДНЁМ РОЖДЕНИЯ, {name.upper()}**\n*Старайся не умереть сегодня.*"
+@tasks.loop(time=time(hour=20, minute=0))
+async def daily_wife_message():
+    weekday = datetime.now().weekday()
+    if weekday == 6:  # воскресенье
+        topic = "приглашение в ресторан"
+    else:
+        topic = "как прошёл день, общение, новости, маленькие подарки"
+    await send_wife_message(topic)
 
-@tasks.loop(hours=24)
-async def birthday_check():
-    today = date.today().strftime("%d-%m")
-    for user_id, info in users_memory.items():
-        birthday = info.get("birthday")
-        if not birthday:
-            continue
-        if birthday[:5] == today:
-            user = bot.get_user(int(user_id))
-            if user:
-                await user.send(generate_birthday_message(info.get("name", user_id), info.get("wife", False)))
+# ================== ПРАЗДНИКИ ==================
 
-# ================== СОБЫТИЯ ==================
+@tasks.loop(time=time(hour=14, minute=0))
+async def send_holiday_messages():
+    today = datetime.today().strftime("%d-%m")
+    topic = HOLIDAYS.get(today)
+    if topic:
+        channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
+        if not channel:
+            return
+        prompt = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": (
+                f"Тема: {topic}. "
+                "Поздравь всех участниц чата. "
+                "Сообщение полностью от лица Астариона, индивидуально, интересно, без шаблонов."
+            )}
+        ]
+        content = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+        await channel.send(content)
+
+# ================== СЛУЧАЙНЫЕ ОТВЕТЫ И ПОСОВЕТУЙ ==================
+
+# (оставляем твой существующий код on_message полностью без изменений)
 
 @bot.event
 async def on_ready():
-    birthday_check.start()
+    daily_wife_message.start()
+    send_holiday_messages.start()
     print(f"🦇 Logged in as {bot.user}")
 
 @bot.event
