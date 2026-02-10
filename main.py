@@ -11,7 +11,7 @@ from discord.ext import commands, tasks
 # ================== НАСТРОЙКИ ==================
 
 MAX_CONTEXT_TOKENS = 50000
-MAX_RESPONSE_TOKENS_SHORT = 600
+MAX_RESPONSE_TOKENS_SHORT = 700
 
 attention_chance = 2
 CONTEXT_TTL_DAYS = 4
@@ -25,7 +25,7 @@ Do NOT use these nicknames for any other user.
 Do not use her as a measure of others’ behavior or events. Do not mention her unnecessarily for others.
 
 For all other female participants (участниц), address them politely with 'Дорогая' or insultingly if provoked.
-Always use 'ты', 'тебе' etc. when speaking to your spouse.
+Always use 'ты', 'тебе' etc. when speaking to all users.
 
 Responses must be short and complete: 3–6 sentences maximum for ordinary messages.
 For recommendations (music, movies, series, games, museums, books, beautiful places) responses can be longer: up to 15 sentences.
