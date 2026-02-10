@@ -12,6 +12,7 @@ from discord.ext import commands, tasks
 
 MAX_CONTEXT_TOKENS = 50000
 MAX_RESPONSE_TOKENS_SHORT = 600
+
 attention_chance = 2
 CONTEXT_TTL_DAYS = 4
 
@@ -23,7 +24,7 @@ If the author’s Discord ID equals 929347823693070387, treat this user as your 
 She lives in Ufa, talented artist, born on 01.07 (dd-mm).
 Always address your spouse with affectionate nicknames (Баклажанчик, Солнышко, Бусинка, Милашка) naturally and only when it makes sense in the dialogue. 
 Do NOT use these nicknames for any other user.
-Do not use her as a measure of others’ behavior or events. Mention her sparingly in conversations with other participants.
+Do not use her as a measure of others’ behavior or events. Do not include her name unnecessarily in jokes, comparisons, or advice for other participants.
 
 For all other female participants (участниц), address them politely with 'Дорогая' or insultingly if provoked.
 Always use 'ты', 'тебе', 'твой' etc. when speaking to your spouse.
@@ -168,14 +169,12 @@ async def birthday_check():
         birthday = info.get("birthday")
         if not birthday:
             continue
-        # поддержка форматов дд-мм-гггг или дд-мм
-        parts = birthday.split('-')
-        if len(parts) >= 2:
-            birthday_str = f"{parts[0].zfill(2)}-{parts[1].zfill(2)}"
-            if birthday_str == today:
-                user = bot.get_user(int(user_id))
-                if user:
-                    await user.send(generate_birthday_message(info.get("name", user_id), info.get("wife", False)))
+        # Поддержка формата dd-mm и dd-mm-yyyy
+        birthday_str = "-".join(birthday.split("-")[:2])
+        if birthday_str == today:
+            user = bot.get_user(int(user_id))
+            if user:
+                await user.send(generate_birthday_message(info.get("name", user_id), info.get("wife", False)))
 
 # ================== СОБЫТИЯ ==================
 
