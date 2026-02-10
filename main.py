@@ -1,9 +1,9 @@
 import os
 import json
 import random
-from datetime import date, datetime
-import aiohttp
+from datetime import date
 import asyncio
+import aiohttp
 
 import discord
 from discord.ext import commands, tasks
@@ -12,7 +12,6 @@ from discord.ext import commands, tasks
 
 MAX_CONTEXT_TOKENS = 50000
 MAX_RESPONSE_TOKENS_SHORT = 700
-
 attention_chance = 2
 CONTEXT_TTL_DAYS = 4
 
@@ -94,12 +93,20 @@ async def ask_deepseek(messages: list[dict], max_tokens: int):
         "top_k": 50,
         "max_tokens": max_tokens
     }
+
     timeout = aiohttp.ClientTimeout(total=60)
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.post(url, headers=headers, json=payload) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
-            return data["choices"][0]["message"]["content"]
+        try:
+            async with session.post(url, headers=headers, json=payload) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        except asyncio.TimeoutError:
+            return "⏳ Запрос DeepSeek занял слишком много времени."
+        except aiohttp.ClientError as e:
+            return f"❌ Ошибка DeepSeek: {e}"
+        except Exception as e:
+            return f"⚠ Неизвестная ошибка DeepSeek: {e}"
 
 # ================== DUCKDUCKGO ==================
 
@@ -111,12 +118,15 @@ async def duck_search(query: str):
         "no_redirect": "1",
         "no_html": "1"
     }
-    timeout = aiohttp.ClientTimeout(total=30)
+    timeout = aiohttp.ClientTimeout(total=15)
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(url, params=params) as resp:
-            if resp.status != 200:
-                return None
-            return await resp.json()
+        try:
+            async with session.get(url, params=params) as resp:
+                if resp.status != 200:
+                    return None
+                return await resp.json()
+        except Exception:
+            return None
 
 def parse_results(data):
     if not data or "RelatedTopics" not in data:
@@ -169,8 +179,7 @@ async def birthday_check():
         birthday = info.get("birthday")
         if not birthday:
             continue
-        birthday_str = birthday[:5]
-        if birthday_str == today:
+        if birthday[:5] == today:
             user = bot.get_user(int(user_id))
             if user:
                 await user.send(generate_birthday_message(info.get("name", user_id), info.get("wife", False)))
@@ -191,9 +200,8 @@ async def on_message(message):
     if random.randint(1, 100) <= attention_chance:
         msgs = []
         async for m in message.channel.history(limit=20):
-            if m.author.bot:
-                continue
-            msgs.append(m)
+            if not m.author.bot:
+                msgs.append(m)
 
         if msgs:
             target = random.choice(msgs)
@@ -212,22 +220,18 @@ async def on_message(message):
                                             f"Нужен короткий ответ Астариона в стиле: {style}.\n"
                                             f"3–6 предложений, полностью законченных."}
             ]
-
-            try:
-                random_reply = await ask_deepseek(small_messages, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+            random_reply = await ask_deepseek(small_messages, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+            if random_reply:
                 await target.reply(random_reply, mention_author=False)
-            except Exception as e:
-                print(f"DeepSeek random reply error: {e}")
 
-    content = message.content
-    user_id = str(message.author.id)
+    content = message.content.lower()
 
     # ====== "ПОСОВЕТУЙ" ======
-    if "посоветуй" in content.lower():
+    if "посоветуй" in content:
         found_topic = None
         query = None
         for topic in TOPIC_MAP:
-            if topic in content.lower():
+            if topic in content:
                 found_topic = topic
                 query = TOPIC_MAP[topic]
                 break
@@ -250,13 +254,10 @@ async def on_message(message):
                     "Всего не более 15 предложений. "
                     "Упоминай только реально существующие объекты."}
             ]
-
-            try:
-                reply = await ask_deepseek(deepseek_prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+            reply = await ask_deepseek(deepseek_prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+            if reply:
                 await message.reply(reply, mention_author=False)
-            except Exception as e:
-                print(f"DeepSeek advice error: {e}")
 
-# ================== ЗАПУСК ==================
+# ================== ЗАПУСК БОТА ==================
 
 bot.run(DISCORD_TOKEN)
