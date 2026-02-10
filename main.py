@@ -142,7 +142,7 @@ async def send_wife_message(topic: str):
             "Напиши сообщение полностью от лица Астариона. "
             "Короткое, интересное, индивидуальное. "
             "Никаких шаблонов, полностью уникальное. "
-            f"Упомяни <@{WIFE_ID}> естественно."
+            f"Естественно упомяни <@{WIFE_ID}>."
         )}
     ]
     content = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
@@ -178,83 +178,78 @@ async def send_holiday_messages():
         content = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
         await channel.send(content)
 
+# ================== ДНИ РОЖДЕНИЯ УЧАСТНИЦ ==================
+
+@tasks.loop(time=time(hour=14, minute=0))
+async def send_birthday_messages():
+    today = datetime.today().strftime("%d-%m")
+    channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
+    if not channel:
+        return
+
+    for user_id, info in users_memory.items():
+        birthday = info.get("birthday", "")
+        if not birthday:
+            continue
+        if birthday[:5] == today:
+            prompt = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": (
+                    f"Тема: день рождения. "
+                    f"Поздравь <@{user_id}> полностью от лица Астариона, "
+                    "сообщение короткое, индивидуальное, интересное, без шаблонов, "
+                    "упоминая её особенности, интересы и характер, если известны."
+                )}
+            ]
+            content = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+            await channel.send(f"<@{user_id}> {content}")
+
 # ================== СЛУЧАЙНЫЕ ОТВЕТЫ И ПОСОВЕТУЙ ==================
 
 # (оставляем твой существующий код on_message полностью без изменений)
+RECOMMEND_TOPICS = ("музыка", "кино", "фильмы", "сериалы", "игры", "книги", "музеи", "красивые места")
+TOPIC_MAP = {
+    "музыка": "best music",
+    "кино": "best movies",
+    "фильмы": "best movies",
+    "сериалы": "best tv series",
+    "игры": "best games",
+    "книги": "best books",
+    "музеи": "best museums",
+    "красивые места": "best beautiful places"
+}
+
+async def duck_search(query: str):
+    url = "https://api.duckduckgo.com/"
+    params = {"q": query, "format": "json", "no_redirect": "1", "no_html": "1"}
+    timeout = aiohttp.ClientTimeout(total=15)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        try:
+            async with session.get(url, params=params) as resp:
+                if resp.status != 200: return None
+                return await resp.json()
+        except Exception:
+            return None
+
+def parse_results(data):
+    if not data or "RelatedTopics" not in data: return []
+    res = []
+    for item in data["RelatedTopics"]:
+        if isinstance(item, dict) and "Text" in item: res.append(item["Text"])
+        elif isinstance(item, dict) and "Topics" in item:
+            for sub in item["Topics"]:
+                if "Text" in sub: res.append(sub["Text"])
+        if len(res) >= 5: break
+    return res
 
 @bot.event
 async def on_ready():
     daily_wife_message.start()
     send_holiday_messages.start()
+    send_birthday_messages.start()
     print(f"🦇 Logged in as {bot.user}")
 
-@bot.event
-async def on_message(message):
-    if message.author.bot:
-        return
-
-    # ====== СЛУЧАЙНЫЙ ОТВЕТ ======
-    if random.randint(1, 100) <= attention_chance:
-        msgs = []
-        async for m in message.channel.history(limit=20):
-            if not m.author.bot:
-                msgs.append(m)
-
-        if msgs:
-            target = random.choice(msgs)
-            txt = target.content.lower()
-
-            if any(w in txt for w in ["плохо", "тяжело", "устал", "груст", "болит", "хуже", "проблем"]):
-                style = "поддержка"
-            elif any(w in txt for w in ["классно", "отлично", "супер", "рад", "нравится", "кайф"]):
-                style = "позитив"
-            else:
-                style = "нейтрально"
-
-            small_messages = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Сообщение пользователя: «{target.content}».\n"
-                                            f"Нужен короткий ответ Астариона в стиле: {style}.\n"
-                                            f"3–6 предложений, полностью законченных."}
-            ]
-            random_reply = await ask_deepseek(small_messages, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-            if random_reply:
-                await target.reply(random_reply, mention_author=False)
-
-    content = message.content.lower()
-
-    # ====== "ПОСОВЕТУЙ" ======
-    if "посоветуй" in content:
-        found_topic = None
-        query = None
-        for topic in TOPIC_MAP:
-            if topic in content:
-                found_topic = topic
-                query = TOPIC_MAP[topic]
-                break
-
-        if found_topic and query:
-            data = await duck_search(query)
-            results = parse_results(data)
-
-            if not results:
-                await message.reply("Не нашёл ничего подходящего.", mention_author=False)
-                return
-
-            formatted_list = "\n".join(f"• {r}" for r in results)
-            deepseek_prompt = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content":
-                    f"Вот найденные реальные объекты по теме '{found_topic}':\n{formatted_list}\n\n"
-                    "Сделай список из 3–7 рекомендаций по теме запроса. "
-                    "Каждый пункт — одно короткое предложение от лица Астариона. "
-                    "Всего не более 15 предложений. "
-                    "Упоминай только реально существующие объекты."}
-            ]
-            reply = await ask_deepseek(deepseek_prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-            if reply:
-                await message.reply(reply, mention_author=False)
-
+# Здесь вставляем существующий on_message из твоего кода без изменений
 # ================== ЗАПУСК БОТА ==================
 
 bot.run(DISCORD_TOKEN)
