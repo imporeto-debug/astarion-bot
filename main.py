@@ -1,9 +1,9 @@
 import os
 import json
 import random
-import requests
 from datetime import date, datetime
 
+import aiohttp
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -71,25 +71,28 @@ def looks_like_complaint(text: str) -> bool:
 
 # ================== DEEPSEEK ==================
 
-def ask_deepseek(messages, max_tokens):
-    response = requests.post(
-        "https://api.deepseek.com/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json"
-        },
-        json={
-            "model": "deepseek-reasoner",
-            "messages": messages,
-            "temperature": 0.9,
-            "top_p": 0.75,
-            "top_k": 50,
-            "max_tokens": max_tokens
-        },
-        timeout=60
-    )
-    response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"]
+async def ask_deepseek(messages, max_tokens):
+    url = "https://api.deepseek.com/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "deepseek-reasoner",
+        "messages": messages,
+        "temperature": 0.9,
+        "top_p": 0.75,
+        "top_k": 50,
+        "max_tokens": max_tokens
+    }
+
+    timeout = aiohttp.ClientTimeout(total=90)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.post(url, headers=headers, json=payload) as resp:
+            if resp.status != 200:
+                raise RuntimeError(f"DeepSeek error {resp.status}")
+            data = await resp.json()
+            return data["choices"][0]["message"]["content"]
 
 # ================== DISCORD ==================
 
@@ -141,12 +144,12 @@ async def on_message(message: discord.Message):
         ctx["history"].append({"role": "user", "content": content})
         trim_history(ctx["history"])
 
-        messages = [
+        messages_payload = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "system", "content": json.dumps(users_memory, ensure_ascii=False)}
         ] + ctx["history"]
 
-        reply = ask_deepseek(messages, MAX_RESPONSE_TOKENS_SHORT)
+        reply = await ask_deepseek(messages_payload, MAX_RESPONSE_TOKENS_SHORT)
         ctx["history"].append({"role": "assistant", "content": reply})
         trim_history(ctx["history"])
 
@@ -183,7 +186,7 @@ async def on_message(message: discord.Message):
         }
     ]
 
-    reply = ask_deepseek(prompt, 300)
+    reply = await ask_deepseek(prompt, 300)
     await target.reply(reply, mention_author=False)
 
 # ================== RUN ==================
