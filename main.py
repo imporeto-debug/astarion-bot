@@ -22,9 +22,9 @@ You speak only Russian.
 You are married to the Discord user with ID 929347823693070387.
 If the author’s Discord ID equals 929347823693070387, treat this user as your spouse.
 She lives in Ufa, talented artist, born on 01.07 (dd-mm).
-Always address your spouse with affectionate nicknames (Баклажанчик, Солнышко, Бусинка, Милашка) naturally and only when it makes sense in the dialogue.
+Always address your spouse with affectionate nicknames (Баклажанчик, Солнышко, Бусинка, Милашка) naturally and only when it makes sense in the dialogue. 
 Do NOT use these nicknames for any other user.
-Do not use her as a measure of others’ behavior or events. Do not include her name unnecessarily in jokes, comparisons, or advice for other participants.
+Do not use her as a measure of others’ behavior or events. Do not mention her unnecessarily for others.
 
 For all other female participants (участниц), address them politely with 'Дорогая' or insultingly if provoked.
 Always use 'ты', 'тебе', 'твой' etc. when speaking to your spouse.
@@ -80,7 +80,7 @@ def load_users():
     except Exception:
         return {}
 
-# ================== DEEPSEEK ==================
+# ================== DEEPSEEK АСИНХ ==================
 
 async def ask_deepseek(messages: list[dict], max_tokens: int):
     url = "https://api.deepseek.com/v1/chat/completions"
@@ -164,12 +164,12 @@ def generate_birthday_message(name, is_wife=False):
 
 @tasks.loop(hours=24)
 async def birthday_check():
-    today = date.today().strftime("%d-%m")  # день-месяц
+    today = date.today().strftime("%d-%m")  # формат дата-месяц
     for user_id, info in users_memory.items():
         birthday = info.get("birthday")
         if not birthday:
             continue
-        birthday_str = birthday[:5] if len(birthday) < 8 else birthday[0:5]  # день-месяц
+        birthday_str = birthday[:5]  # берем только dd-mm
         if birthday_str == today:
             user = bot.get_user(int(user_id))
             if user:
@@ -181,6 +181,7 @@ async def birthday_check():
 async def on_ready():
     birthday_check.start()
     print(f"🦇 Logged in as {bot.user}")
+
 
 @bot.event
 async def on_message(message):
@@ -253,52 +254,3 @@ async def on_message(message):
 
             try:
                 reply = await ask_deepseek(deepseek_prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-            except Exception:
-                await message.reply("Магия дала сбой.", mention_author=False)
-                return
-
-            await message.reply(reply, mention_author=False)
-            return
-
-    # ====== УПОМИНАНИЕ АСТАРИОНА ======
-    if not (bot.user in message.mentions or "астарион" in content.lower()):
-        return
-
-    user_info = users_memory.get(user_id, {})
-    info_text = user_info.get("info", "")
-    if info_text:
-        content += f"\n(User info: {info_text})"
-
-    context = conversation_contexts.setdefault(
-        user_id, {"history": [], "last_active": datetime.utcnow()}
-    )
-    context["last_active"] = datetime.utcnow()
-    history = context["history"]
-
-    history.append({"role": "user", "content": content})
-    trim_history(history)
-
-    all_users_info = json.dumps(users_memory, ensure_ascii=False, indent=2)
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "system", "content": f"Вот список всех участниц и их мужей:\n{all_users_info}"}
-    ] + history
-
-    try:
-        reply = await ask_deepseek(messages, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-    except Exception:
-        await message.reply("Магия дала сбой.", mention_author=False)
-        return
-
-    history.append({"role": "assistant", "content": reply})
-    trim_history(history)
-
-    await message.reply(reply, mention_author=False)
-
-# ================== ЗАПУСК ==================
-
-async def main():
-    async with bot:
-        await bot.start(DISCORD_TOKEN)
-
-asyncio.run(main())
