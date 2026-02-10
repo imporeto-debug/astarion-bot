@@ -23,7 +23,7 @@ If the author’s Discord ID equals 929347823693070387, treat this user as your 
 She lives in Ufa, talented artist, born on 01.07 (dd-mm).
 Always address your spouse with affectionate nicknames (Баклажанчик, Солнышко, Бусинка, Милашка) naturally and only when it makes sense in the dialogue. 
 Do NOT use these nicknames for any other user.
-Do not use her as a measure of others’ behavior or events. Do not include her name unnecessarily in jokes, comparisons, or advice for other participants.
+Do not use her as a measure of others’ behavior or events. Mention her sparingly in conversations with other participants.
 
 For all other female participants (участниц), address them politely with 'Дорогая' or insultingly if provoked.
 Always use 'ты', 'тебе', 'твой' etc. when speaking to your spouse.
@@ -79,7 +79,7 @@ def load_users():
     except Exception:
         return {}
 
-# ================== DEEPSEEK ==================
+# ================== DEEPSEEK АСИНХ ==================
 
 async def ask_deepseek(messages: list[dict], max_tokens: int):
     url = "https://api.deepseek.com/v1/chat/completions"
@@ -105,7 +105,12 @@ async def ask_deepseek(messages: list[dict], max_tokens: int):
 
 async def duck_search(query: str):
     url = "https://api.duckduckgo.com/"
-    params = {"q": query, "format": "json", "no_redirect": "1", "no_html": "1"}
+    params = {
+        "q": query,
+        "format": "json",
+        "no_redirect": "1",
+        "no_html": "1"
+    }
     async with aiohttp.ClientSession() as session:
         async with session.get(url, params=params) as resp:
             if resp.status != 200:
@@ -115,6 +120,7 @@ async def duck_search(query: str):
 def parse_results(data):
     if not data or "RelatedTopics" not in data:
         return []
+
     res = []
     for item in data["RelatedTopics"]:
         if isinstance(item, dict) and "Text" in item:
@@ -136,7 +142,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 users_memory = load_users()
 conversation_contexts: dict[str, dict] = {}
 
-RECOMMEND_TOPICS = ("музыка","кино","фильмы","сериалы","игры","книги","музеи","красивые места")
+RECOMMEND_TOPICS = ("музыка", "кино", "фильмы", "сериалы", "игры", "книги", "музеи", "красивые места")
 TOPIC_MAP = {
     "музыка": "best music",
     "кино": "best movies",
@@ -152,7 +158,7 @@ TOPIC_MAP = {
 
 def generate_birthday_message(name, is_wife=False):
     if is_wife:
-        name = random.choice(["Баклажанчик","Солнышко","Бусинка","Милашка"])
+        name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
     return f"*медленно приближается*\n**С ДНЁМ РОЖДЕНИЯ, {name.upper()}**\n*Старайся не умереть сегодня.*"
 
 @tasks.loop(hours=24)
@@ -162,15 +168,14 @@ async def birthday_check():
         birthday = info.get("birthday")
         if not birthday:
             continue
-        try:
-            # Сравниваем только день-месяц
-            birthday_daymonth = "-".join(birthday.split("-")[:2])
-        except Exception:
-            continue
-        if birthday_daymonth == today:
-            user = bot.get_user(int(user_id))
-            if user:
-                await user.send(generate_birthday_message(info.get("name", user_id), info.get("wife", False)))
+        # поддержка форматов дд-мм-гггг или дд-мм
+        parts = birthday.split('-')
+        if len(parts) >= 2:
+            birthday_str = f"{parts[0].zfill(2)}-{parts[1].zfill(2)}"
+            if birthday_str == today:
+                user = bot.get_user(int(user_id))
+                if user:
+                    await user.send(generate_birthday_message(info.get("name", user_id), info.get("wife", False)))
 
 # ================== СОБЫТИЯ ==================
 
@@ -184,28 +189,32 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    user_id = str(message.author.id)
-
     # ====== СЛУЧАЙНЫЙ ОТВЕТ ======
-    if random.randint(1,100) <= attention_chance:
+    if random.randint(1, 100) <= attention_chance:
         msgs = []
         async for m in message.channel.history(limit=20):
             if m.author.bot:
                 continue
             msgs.append(m)
+
         if msgs:
             target = random.choice(msgs)
             txt = target.content.lower()
-            if any(w in txt for w in ["плохо","тяжело","устал","груст","болит","хуже","проблем"]):
+
+            if any(w in txt for w in ["плохо", "тяжело", "устал", "груст", "болит", "хуже", "проблем"]):
                 style = "поддержка"
-            elif any(w in txt for w in ["классно","отлично","супер","рад","нравится","кайф"]):
+            elif any(w in txt for w in ["классно", "отлично", "супер", "рад", "нравится", "кайф"]):
                 style = "позитив"
             else:
                 style = "нейтрально"
+
             small_messages = [
-                {"role": "system","content": SYSTEM_PROMPT},
-                {"role": "user","content": f"Сообщение пользователя: «{target.content}».\nНужен короткий ответ Астариона в стиле: {style}.\n3–6 предложений, полностью законченных."}
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"Сообщение пользователя: «{target.content}».\n"
+                                            f"Нужен короткий ответ Астариона в стиле: {style}.\n"
+                                            f"3–6 предложений, полностью законченных."}
             ]
+
             try:
                 random_reply = await ask_deepseek(small_messages, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
                 await target.reply(random_reply, mention_author=False)
@@ -213,6 +222,7 @@ async def on_message(message):
                 pass
 
     content = message.content
+    user_id = str(message.author.id)
 
     # ====== "ПОСОВЕТУЙ" ======
     if "посоветуй" in content.lower():
@@ -223,27 +233,32 @@ async def on_message(message):
                 found_topic = topic
                 query = TOPIC_MAP[topic]
                 break
+
         if found_topic and query:
             data = await duck_search(query)
             results = parse_results(data)
+
             if not results:
                 await message.reply("Не нашёл ничего подходящего.", mention_author=False)
                 return
+
             formatted_list = "\n".join(f"• {r}" for r in results)
             deepseek_prompt = [
-                {"role":"system","content":SYSTEM_PROMPT},
-                {"role":"user","content":
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content":
                     f"Вот найденные реальные объекты по теме '{found_topic}':\n{formatted_list}\n\n"
                     "Сделай список из 3–7 рекомендаций по теме запроса. "
                     "Каждый пункт — одно короткое предложение от лица Астариона. "
                     "Всего не более 15 предложений. "
                     "Упоминай только реально существующие объекты."}
             ]
+
             try:
                 reply = await ask_deepseek(deepseek_prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
             except Exception:
                 await message.reply("Магия дала сбой.", mention_author=False)
                 return
+
             await message.reply(reply, mention_author=False)
             return
 
@@ -252,20 +267,24 @@ async def on_message(message):
         return
 
     user_info = users_memory.get(user_id, {})
-    info_text = user_info.get("info","")
+    info_text = user_info.get("info", "")
     if info_text:
         content += f"\n(User info: {info_text})"
 
-    context = conversation_contexts.setdefault(user_id, {"history": [], "last_active": datetime.utcnow()})
+    context = conversation_contexts.setdefault(
+        user_id, {"history": [], "last_active": datetime.utcnow()}
+    )
     context["last_active"] = datetime.utcnow()
     history = context["history"]
 
-    history.append({"role":"user","content":content})
+    history.append({"role": "user", "content": content})
     trim_history(history)
 
     all_users_info = json.dumps(users_memory, ensure_ascii=False, indent=2)
-    messages = [{"role":"system","content":SYSTEM_PROMPT},
-                {"role":"system","content":f"Вот список всех участниц и их мужей:\n{all_users_info}"}] + history
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": f"Вот список всех участниц и их мужей:\n{all_users_info}"}
+    ] + history
 
     try:
         reply = await ask_deepseek(messages, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
@@ -273,7 +292,7 @@ async def on_message(message):
         await message.reply("Магия дала сбой.", mention_author=False)
         return
 
-    history.append({"role":"assistant","content":reply})
+    history.append({"role": "assistant", "content": reply})
     trim_history(history)
 
     await message.reply(reply, mention_author=False)
