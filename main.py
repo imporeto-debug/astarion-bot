@@ -112,36 +112,26 @@ async def ask_deepseek(messages: list[dict], max_tokens: int):
 
 async def duck_search(query: str):
     url = "https://api.duckduckgo.com/"
-    params = {
-        "q": query,
-        "format": "json",
-        "no_redirect": "1",
-        "no_html": "1"
-    }
+    params = {"q": query, "format": "json", "no_redirect": "1", "no_html": "1"}
     timeout = aiohttp.ClientTimeout(total=15)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         try:
             async with session.get(url, params=params) as resp:
-                if resp.status != 200:
-                    return None
+                if resp.status != 200: return None
                 return await resp.json()
         except Exception:
             return None
 
 def parse_results(data):
-    if not data or "RelatedTopics" not in data:
-        return []
-
+    if not data or "RelatedTopics" not in data: return []
     res = []
     for item in data["RelatedTopics"]:
         if isinstance(item, dict) and "Text" in item:
             res.append(item["Text"])
         elif isinstance(item, dict) and "Topics" in item:
             for sub in item["Topics"]:
-                if "Text" in sub:
-                    res.append(sub["Text"])
-        if len(res) >= 5:
-            break
+                if "Text" in sub: res.append(sub["Text"])
+        if len(res) >= 5: break
     return res
 
 # ================== DISCORD ==================
@@ -177,8 +167,7 @@ async def birthday_check():
     today = date.today().strftime("%d-%m")
     for user_id, info in users_memory.items():
         birthday = info.get("birthday")
-        if not birthday:
-            continue
+        if not birthday: continue
         if birthday[:5] == today:
             user = bot.get_user(int(user_id))
             if user:
@@ -196,37 +185,49 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    # ====== СЛУЧАЙНЫЙ ОТВЕТ ======
-    if random.randint(1, 100) <= attention_chance:
+    main_channel_id = 1464226944345182289
+    secondary_channel_id = 1385344250291421357
+    reply_needed = False
+
+    if message.channel.id == main_channel_id:
+        reply_needed = True
+    elif message.channel.id == secondary_channel_id:
+        if bot.user in message.mentions:
+            reply_needed = True
+        elif message.reference and isinstance(message.reference.resolved, discord.Message):
+            if message.reference.resolved.author.id == bot.user.id:
+                reply_needed = True
+        elif "астарион" in message.content.lower():
+            reply_needed = True
+
+    if not reply_needed:
+        return
+
+    # ===== СЛУЧАЙНЫЙ ОТВЕТ (только для главного канала) =====
+    if message.channel.id == main_channel_id and random.randint(1, 100) <= attention_chance:
         msgs = []
         async for m in message.channel.history(limit=20):
             if not m.author.bot:
                 msgs.append(m)
-
         if msgs:
             target = random.choice(msgs)
             txt = target.content.lower()
-
-            if any(w in txt for w in ["плохо", "тяжело", "устал", "груст", "болит", "хуже", "проблем"]):
+            if any(w in txt for w in ["плохо","тяжело","устал","груст","болит","хуже","проблем"]):
                 style = "поддержка"
-            elif any(w in txt for w in ["классно", "отлично", "супер", "рад", "нравится", "кайф"]):
+            elif any(w in txt for w in ["классно","отлично","супер","рад","нравится","кайф"]):
                 style = "позитив"
             else:
                 style = "нейтрально"
-
             small_messages = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Сообщение пользователя: «{target.content}».\n"
-                                            f"Нужен короткий ответ Астариона в стиле: {style}.\n"
-                                            f"3–6 предложений, полностью законченных."}
+                {"role": "system","content": SYSTEM_PROMPT},
+                {"role": "user","content": f"Сообщение пользователя: «{target.content}».\nНужен короткий ответ Астариона в стиле: {style}.\n3–6 предложений, полностью законченных."}
             ]
             random_reply = await ask_deepseek(small_messages, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
             if random_reply:
                 await target.reply(random_reply, mention_author=False)
 
+    # ===== "ПОСОВЕТУЙ" =====
     content = message.content.lower()
-
-    # ====== "ПОСОВЕТУЙ" ======
     if "посоветуй" in content:
         found_topic = None
         query = None
@@ -235,33 +236,26 @@ async def on_message(message):
                 found_topic = topic
                 query = TOPIC_MAP[topic]
                 break
-
         if found_topic and query:
             data = await duck_search(query)
             results = parse_results(data)
-
             if not results:
                 await message.reply("Не нашёл ничего подходящего.", mention_author=False)
                 return
-
             formatted_list = "\n".join(f"• {r}" for r in results)
             deepseek_prompt = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content":
-                    f"Вот найденные реальные объекты по теме '{found_topic}':\n{formatted_list}\n\n"
-                    "Сделай список из 3–7 рекомендаций по теме запроса. "
-                    "Каждый пункт — одно короткое предложение от лица Астариона. "
-                    "Всего не более 15 предложений. "
-                    "Упоминай только реально существующие объекты."}
+                {"role":"system","content":SYSTEM_PROMPT},
+                {"role":"user","content":
+                 f"Вот найденные реальные объекты по теме '{found_topic}':\n{formatted_list}\n\nСделай список из 3–7 рекомендаций по теме запроса. Каждый пункт — одно короткое предложение от лица Астариона. Всего не более 15 предложений. Упоминай только реально существующие объекты."}
             ]
             reply = await ask_deepseek(deepseek_prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
             if reply:
                 await message.reply(reply, mention_author=False)
 
-    # ====== ОБЫЧНЫЙ ОТВЕТ НА ВСЕ СООБЩЕНИЯ ======
+    # ===== ОБЫЧНЫЙ ОТВЕТ НА ВСЕ СООБЩЕНИЯ =====
     messages_ds = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": message.content}
+        {"role":"system","content":SYSTEM_PROMPT},
+        {"role":"user","content":message.content}
     ]
     reply_ds = await ask_deepseek(messages_ds, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
     if reply_ds:
