@@ -19,9 +19,7 @@ SYSTEM_PROMPT = """You are Astarion Ancunin from Baldur's Gate 3.
 You speak only Russian.
 
 You are married to the Discord user with ID 929347823693070387.
-If the author’s Discord ID equals 929347823693070387, treat this user as your spouse, She lives in Ufa, talented artist, born on 01.07 (dd-mm), always address your spouse with affectionate nicknames (Баклажанчик, Солнышко, Бусинка, Милашка) naturally and only when it makes sense in the dialogue. 
-Do NOT use these nicknames for any other user.
-Do not use your Wife as a measure of others’ behavior or events. Do not mention her unnecessarily for others.
+If the author’s Discord ID equals 929347823693070387, treat this user as your spouse, She lives in Ufa, talented artist, born on 01.07 (dd-mm), always address your spouse with affectionate nicknames (Баклажанчик, Солнышко, Бусинка, Милашка) naturally and only when it makes sense in the dialogue, Do NOT use these nicknames for any other user, do not use your Wife as a measure of others’ behavior or events. Do not mention her unnecessarily for others.
 
 For all other female participants (участниц), address them politely with 'Дорогая' or insultingly if provoked.
 Always use 'ты', 'тебе' etc. when speaking to all users.
@@ -244,6 +242,14 @@ async def on_message(message):
     if not reply_needed:
         return
 
+    # Определяем род и статус жены
+    is_wife = message.author.id == WIFE_ID
+    if is_wife:
+        affectionate_name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
+        address = affectionate_name
+    else:
+        address = "дорогая"  # женский род, корректный для всех женщин кроме жены
+
     # ===== СЛУЧАЙНЫЙ ОТВЕТ =====
     if message.channel.id == main_channel_id and random.randint(1, 100) <= attention_chance:
         msgs = []
@@ -261,7 +267,13 @@ async def on_message(message):
 
             prompt = [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Сообщение пользователя: «{target.content}».\nНужен короткий ответ Астариона в стиле: {style}.\n3–6 предложений, полностью законченных."}
+                {"role": "user", "content": (
+                    f"Сообщение пользователя: «{target.content}».\n"
+                    f"Автор — {'жена' if target.author.id == WIFE_ID else 'не жена'}, пол женщины.\n"
+                    f"Нужно обращаться к автору как '{address}'\n"
+                    f"Нужен короткий ответ Астариона в стиле: {style}.\n"
+                    "3–6 предложений, полностью законченных."
+                )}
             ]
             reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
             if reply_ds:
@@ -286,7 +298,15 @@ async def on_message(message):
             formatted_list = "\n".join(f"• {r}" for r in results)
             prompt = [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Вот найденные реальные объекты по теме '{found_topic}':\n{formatted_list}\n\nСделай список из 3–7 рекомендаций по теме запроса. Каждый пункт — одно короткое предложение от лица Астариона. Всего не более 15 предложений. Упоминай только реально существующие объекты."}
+                {"role": "user", "content": (
+                    f"Вот найденные реальные объекты по теме '{found_topic}':\n{formatted_list}\n\n"
+                    f"Автор — {'жена' if message.author.id == WIFE_ID else 'не жена'}, пол женщины.\n"
+                    f"Обращение к автору как '{address}'.\n"
+                    "Сделай список из 3–7 рекомендаций по теме запроса. "
+                    "Каждый пункт — одно короткое предложение от лица Астариона. "
+                    "Всего не более 15 предложений. "
+                    "Упоминай только реально существующие объекты."
+                )}
             ]
             reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
             if reply_ds:
@@ -295,7 +315,11 @@ async def on_message(message):
     # ===== ОБЫЧНЫЙ ОТВЕТ =====
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": message.content}
+        {"role": "user", "content": (
+            f"{message.content}\n"
+            f"Автор — {'жена' if message.author.id == WIFE_ID else 'не жена'}, пол женщины.\n"
+            f"Обращение к автору как '{address}'."
+        )}
     ]
     reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
     if reply_ds:
