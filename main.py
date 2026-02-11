@@ -157,9 +157,11 @@ conversation_contexts: dict[str, dict] = {}
 async def send_wife_message(topic: str):
     channel = bot.get_channel(WIFE_CHANNEL_ID)
     if not channel: return
+    today_str = datetime.now().strftime("%d-%m-%Y")
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": (
+            f"Сегодня: {today_str}\n"
             f"Тема: {topic}. Напиши сообщение полностью от лица Астариона. "
             "Короткое, интересное, индивидуальное. "
             f"Естественно упомяни <@{WIFE_ID}>."
@@ -179,14 +181,15 @@ async def daily_wife_message():
 @tasks.loop(time=time(hour=14, minute=0))
 async def send_holiday_messages():
     await bot.wait_until_ready()
-    today = datetime.today().strftime("%d-%m")
-    topic = HOLIDAYS.get(today)
+    today_str = datetime.now().strftime("%d-%m")
+    topic = HOLIDAYS.get(today_str)
     if topic:
         channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
         if channel:
             prompt = [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": (
+                    f"Сегодня: {today_str}\n"
                     f"Тема: {topic}. Поздравь всех участниц чата. "
                     "Сообщение полностью от лица Астариона, индивидуально, интересно, без шаблонов."
                 )}
@@ -198,15 +201,16 @@ async def send_holiday_messages():
 @tasks.loop(time=time(hour=14, minute=0))
 async def send_birthday_messages():
     await bot.wait_until_ready()
-    today = datetime.today().strftime("%d-%m")
+    today_str = datetime.now().strftime("%d-%m")
     channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
     if not channel: return
     for user_id, info in users_memory.items():
         birthday = info.get("birthday", "")
-        if birthday and birthday[:5] == today:
+        if birthday and birthday[:5] == today_str:
             prompt = [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": (
+                    f"Сегодня: {today_str}\n"
                     f"Тема: день рождения. Поздравь <@{user_id}> полностью от лица Астариона, "
                     "сообщение короткое, индивидуальное, интересное, без шаблонов, "
                     "упоминая её особенности, интересы и характер, если известны."
@@ -227,7 +231,6 @@ async def on_message(message):
     secondary_channel_id = CELEBRATION_CHANNEL_ID
     reply_needed = False
 
-    # Проверка канала и условий ответа
     if message.channel.id == main_channel_id:
         reply_needed = True
     elif message.channel.id == secondary_channel_id:
@@ -242,20 +245,23 @@ async def on_message(message):
     if not reply_needed:
         return
 
+    # ===== Текущая дата =====
+    today_str = datetime.now().strftime("%d-%m-%Y")
+
     # Определяем род и статус жены
     is_wife = message.author.id == WIFE_ID
     if is_wife:
         affectionate_name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
         address = affectionate_name
     else:
-        address = "дорогая"  # женский род, корректный для всех женщин кроме жены
+        address = "дорогая"
 
-    # ===== СЛУЧАЙНЫЙ ОТВЕТ =====
+    # ===== СЛУЧАЙНЫЙ ОТВЕТ, ПОСОВЕТУЙ И ОБЫЧНЫЙ ОТВЕТ =====
+    content_lower = message.content.lower()
+
+    # Случайный ответ
     if message.channel.id == main_channel_id and random.randint(1, 100) <= attention_chance:
-        msgs = []
-        async for m in message.channel.history(limit=20):
-            if not m.author.bot:
-                msgs.append(m)
+        msgs = [m async for m in message.channel.history(limit=20) if not m.author.bot]
         if msgs:
             target = random.choice(msgs)
             style = "нейтрально"
@@ -268,9 +274,10 @@ async def on_message(message):
             prompt = [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": (
+                    f"Сегодня: {today_str}\n"
                     f"Сообщение пользователя: «{target.content}».\n"
                     f"Автор — {'жена' if target.author.id == WIFE_ID else 'не жена'}, пол женщины.\n"
-                    f"Нужно обращаться к автору как '{address}'\n"
+                    f"Обращение к автору как '{address}'.\n"
                     f"Нужен короткий ответ Астариона в стиле: {style}.\n"
                     "3–6 предложений, полностью законченных."
                 )}
@@ -279,13 +286,12 @@ async def on_message(message):
             if reply_ds:
                 await target.reply(reply_ds, mention_author=False)
 
-    # ===== "ПОСОВЕТУЙ" =====
-    content = message.content.lower()
-    if "посоветуй" in content:
+    # "Посоветуй"
+    if "посоветуй" in content_lower:
         found_topic = None
         query = None
         for topic in TOPIC_MAP:
-            if topic in content:
+            if topic in content_lower:
                 found_topic = topic
                 query = TOPIC_MAP[topic]
                 break
@@ -299,6 +305,7 @@ async def on_message(message):
             prompt = [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": (
+                    f"Сегодня: {today_str}\n"
                     f"Вот найденные реальные объекты по теме '{found_topic}':\n{formatted_list}\n\n"
                     f"Автор — {'жена' if message.author.id == WIFE_ID else 'не жена'}, пол женщины.\n"
                     f"Обращение к автору как '{address}'.\n"
@@ -312,10 +319,11 @@ async def on_message(message):
             if reply_ds:
                 await message.reply(reply_ds, mention_author=False)
 
-    # ===== ОБЫЧНЫЙ ОТВЕТ =====
+    # Обычный ответ
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": (
+            f"Сегодня: {today_str}\n"
             f"{message.content}\n"
             f"Автор — {'жена' if message.author.id == WIFE_ID else 'не жена'}, пол женщины.\n"
             f"Обращение к автору как '{address}'."
