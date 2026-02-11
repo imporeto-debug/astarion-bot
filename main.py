@@ -250,6 +250,7 @@ async def on_message(message):
     if message.author.bot:
         return
 
+    # --- Каналы где бот отвечает ---
     main_channel_id = WIFE_CHANNEL_ID
     secondary_channel_id = CELEBRATION_CHANNEL_ID
     reply_needed = False
@@ -268,140 +269,107 @@ async def on_message(message):
     if not reply_needed:
         return
 
+    # ===== Текущая дата =====
     today_str = datetime.now().strftime("%d-%m-%Y")
 
-    # ===== Определяем жену и обращение =====
-    is_wife = message.author.id == WIFE_ID
-    affectionate_name = "жена"  # дефолтное значение, чтобы не было ошибки
-    if is_wife:
+    # ===== Получаем данные о текущей участнице =====
+    uid = str(message.author.id)
+    current = users_memory.get(uid, {})
+
+    current_name = current.get("name", "Неизвестная участница")
+    current_birthday = current.get("birthday", "")
+    current_info_raw = current.get("info", "")
+    current_is_wife = current.get("wife", False)
+
+    # Определяем мужа текущей участницы
+    current_husband = ""
+    if "married to" in current_info_raw:
+        current_husband = current_info_raw.split("married to ")[1].split(" from")[0]
+
+    # Определяем город участницы по info
+    current_city = ""
+    if "Lives in" in current_info_raw:
+        current_city = current_info_raw.split("Lives in ")[1].split(",")[0]
+
+    # Хобби участницы — всё после мужа
+    current_hobby = ""
+    if "from" in current_info_raw and "," in current_info_raw:
+        parts = current_info_raw.split(",")
+        if len(parts) >= 3:
+            current_hobby = ", ".join(parts[2:]).strip()
+
+    # ===== Формируем обращение =====
+    if current_is_wife:
         affectionate_name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
         address = affectionate_name
     else:
-        address = "дорогая"
+        address = "Дорогая"
 
-    # ===== Подготовка информации о женах и участницах =====
+    # ===== Формируем список всех участниц для модели =====
     participants_info = []
     id_to_husband = {}
 
-    for uid, info in users_memory.items():
+    for mem_id, info in users_memory.items():
         name = info.get("name", "Неизвестно")
-        husband_info = info.get("info", "")
-        hobby = info.get("hobby", "")
+        info_raw = info.get("info", "")
         birthday = info.get("birthday", "")
 
-        married_to = ""
-        if "married to" in husband_info:
-            married_to = husband_info.split("married to ")[1].split(" from")[0]
+        husband = ""
+        if "married to" in info_raw:
+            husband = info_raw.split("married to ")[1].split(" from")[0]
 
-        participant_str = f"{name} замужем за {married_to}"
-        if hobby:
-            participant_str += f", увлечения: {hobby}"
-        if birthday:
-            participant_str += f", день рождения: {birthday}"
+        participants_info.append(
+            f"{mem_id}: {name}; муж: {husband}; дата рождения: {birthday}; info: {info_raw}"
+        )
 
-        participants_info.append(participant_str)
+        if husband:
+            id_to_husband[mem_id] = husband
 
-        if married_to:
-            id_to_husband[str(uid)] = married_to
-
-    # Добавляем жену Астариона
-    participants_info.append(f"А моя {affectionate_name}, разумеется, замужем за мной.")
-    id_to_husband[str(WIFE_ID)] = "Astarion Ancunin"
+    # Добавляем жену Астариона в карту муж → жена
+    if current_is_wife:
+        id_to_husband[str(WIFE_ID)] = "Astarion Ancunin"
 
     participants_info_str = "\n".join(participants_info)
     id_to_husband_str = json.dumps(id_to_husband, ensure_ascii=False)
 
-    content_lower = message.content.lower()
+    # ===== Формируем персональный профиль участницы =====
+    current_profile = (
+        f"Имя: {current_name}\n"
+        f"ID: {uid}\n"
+        f"Муж: {current_husband}\n"
+        f"Город: {current_city}\n"
+        f"Хобби/характеристики: {current_hobby}\n"
+        f"День рождения: {current_birthday}\n"
+        f"Статус жены Астариона: {current_is_wife}\n"
+    )
 
-    # ===== Случайный ответ =====
-    if message.channel.id == main_channel_id and random.randint(1, 100) <= attention_chance:
-        msgs = [m async for m in message.channel.history(limit=20) if not m.author.bot]
-        if msgs:
-            target = random.choice(msgs)
-            style = "нейтрально"
-            txt = target.content.lower()
-            if any(w in txt for w in ["плохо","тяжело","устал","груст","болит","хуже","проблем"]):
-                style = "поддержка"
-            elif any(w in txt for w in ["классно","отлично","супер","рад","нравится","кайф"]):
-                style = "позитив"
-
-            prompt = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": (
-                    f"Сегодня: {today_str}\n"
-                    f"Сообщение пользователя: «{target.content}».\n"
-                    f"Автор — {'жена' if target.author.id == WIFE_ID else 'не жена'}, пол женщины.\n"
-                    f"Обращение к автору как '{address}'.\n"
-                    f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
-                    f"Точная карта участница->муж:\n{id_to_husband_str}\n"
-                    f"Нужен короткий ответ Астариона в стиле: {style}.\n"
-                    "3–6 предложений, полностью законченных."
-                )}
-            ]
-            reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-            if reply_ds:
-                # Заменяем упоминание жены на прозвище
-                if is_wife:
-                    reply_ds = reply_ds.replace(f"<@{WIFE_ID}>", affectionate_name)
-                await target.reply(reply_ds, mention_author=False)
-
-    # ===== "Посоветуй" =====
-    if "посоветуй" in content_lower:
-        found_topic = None
-        query = None
-        for topic in TOPIC_MAP:
-            if topic in content_lower:
-                found_topic = topic
-                query = TOPIC_MAP[topic]
-                break
-        if found_topic and query:
-            data = await duck_search(query)
-            results = parse_results(data)
-            if not results:
-                await message.reply("Не нашёл ничего подходящего.", mention_author=False)
-                return
-            formatted_list = "\n".join(f"• {r}" for r in results)
-            prompt = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": (
-                    f"Сегодня: {today_str}\n"
-                    f"Вот найденные реальные объекты по теме '{found_topic}':\n{formatted_list}\n\n"
-                    f"Автор — {'жена' if is_wife else 'не жена'}, пол женщины.\n"
-                    f"Обращение к автору как '{address}'.\n"
-                    f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
-                    f"Точная карта участница->муж:\n{id_to_husband_str}\n"
-                    "Сделай список из 3–7 рекомендаций по теме запроса. "
-                    "Каждый пункт — одно короткое предложение от лица Астариона. "
-                    "Всего не более 15 предложений. "
-                    "Упоминай только реально существующие объекты."
-                )}
-            ]
-            reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-            if reply_ds:
-                if is_wife:
-                    reply_ds = reply_ds.replace(f"<@{WIFE_ID}>", affectionate_name)
-                await message.reply(reply_ds, mention_author=False)
-
-    # ===== Обычный ответ =====
+    # ===== Подготавливаем промпт =====
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": (
+        {"role": "user",
+         "content":
             f"Сегодня: {today_str}\n"
-            f"{message.content}\n"
-            f"Автор — {'жена' if is_wife else 'не жена'}, пол женщины.\n"
-            f"Обращение к автору как '{address}'.\n"
-            f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
-            f"Точная карта участница->муж:\n{id_to_husband_str}\n"
-            "Отвечай строго согласно этим данным, не придумывай новых имен или пар."
-        )}
+            f"Сообщение участницы: «{message.content}»\n"
+            f"Обращение к ней как: {address}\n\n"
+            f"ПЕРСОНАЛЬНАЯ СПРАВКА ОБ ЭТОЙ УЧАСТНИЦЕ:\n{current_profile}\n\n"
+            f"СПИСОК ВСЕХ УЧАСТНИЦ И ИХ ИНФОРМАЦИИ:\n{participants_info_str}\n\n"
+            f"ТОЧНАЯ КАРТА ID → МУЖ:\n{id_to_husband_str}\n\n"
+            "Используй персональные данные участницы только если они логично относятся к вопросу.\n"
+            "Если она не спрашивает о других, не перечисляй их.\n"
+            "Отвечай строго в образе Астариона."
+        }
     ]
+
+    # ===== Получаем ответ =====
     reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+
+    # Подмена айди на прозвище жены
+    if reply_ds and current_is_wife:
+        reply_ds = reply_ds.replace(f"<@{WIFE_ID}>", address)
+
     if reply_ds:
-        if is_wife:
-            reply_ds = reply_ds.replace(f"<@{WIFE_ID}>", affectionate_name)
         await message.reply(reply_ds, mention_author=False)
         
-
 # ================== ЗАПУСК ==================
 
 bot.run(DISCORD_TOKEN)
