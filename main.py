@@ -382,7 +382,7 @@ async def on_message(message):
 
             if reply_ds:
                 if current_is_wife:
-                    reply_ds = reply_ds.replace(f\"<@{WIFE_ID}>\", address)
+                    reply_ds = reply_ds.replace(f"<@{WIFE_ID}>", address)
                 await message.reply(reply_ds, mention_author=False)
                 return
     
