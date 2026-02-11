@@ -11,7 +11,7 @@ from discord.ext import commands, tasks
 # ================== НАСТРОЙКИ ==================
 
 MAX_CONTEXT_TOKENS = 50000
-MAX_RESPONSE_TOKENS_SHORT = 700
+MAX_RESPONSE_TOKENS_SHORT = 1100
 attention_chance = 2
 CONTEXT_TTL_DAYS = 4
 
