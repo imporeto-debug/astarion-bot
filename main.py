@@ -257,47 +257,42 @@ async def on_message(message):
     if not reply_needed:
         return
 
-    # ===== Текущая дата =====
     today_str = datetime.now().strftime("%d-%m-%Y")
 
-    # Определяем род и статус жены
-    is_wife = message.author.id == WIFE_ID
+    # ===== Определяем статус жены и обращение =====
+    user_info = users_memory.get(str(message.author.id))
+    is_wife = user_info is not None and user_info.get("wife", False)
+
     if is_wife:
         affectionate_name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
         address = affectionate_name
     else:
         address = "дорогая"
 
-    # ===== Подготовка точной информации о женах =====
+    # ===== Подготовка информации о женах =====
     participants_info = []
-    for user_id, info in users_memory.items():
-        name = info.get("name")
+    id_to_husband = {}
+
+    for uid, info in users_memory.items():
+        name = info.get("name", "")
         husband_info = info.get("info", "")
+        married_to = ""
         if "married to" in husband_info:
-            # Берём точное имя мужа из users.json info
             married_to = husband_info.split("married to ")[1].split(" from")[0]
-            participants_info.append(f"{name} замужем за {married_to}")
+        participants_info.append(f"{name} замужем за {married_to}")
+        if married_to:
+            id_to_husband[str(uid)] = married_to
+
     if is_wife:
         participants_info.append(f"А моя {affectionate_name}, разумеется, замужем за мной.")
+        id_to_husband[str(message.author.id)] = "Astarion Ancunin"
+
     participants_info_str = "\n".join(participants_info)
-
-        # ===== Точная карта: userID -> имя мужа =====
-    id_to_husband = {}
-    for uid, info in users_memory.items():
-        hinfo = info.get("info", "")
-        if "married to" in hinfo:
-            husband = hinfo.split("married to ")[1].split(" from")[0]
-            id_to_husband[str(uid)] = husband
-
-    if is_wife:
-        id_to_husband[str(WIFE_ID)] = "Astarion Ancunin"
-
     id_to_husband_str = json.dumps(id_to_husband, ensure_ascii=False)
 
-    # ===== СЛУЧАЙНЫЙ ОТВЕТ, ПОСОВЕТУЙ И ОБЫЧНЫЙ ОТВЕТ =====
     content_lower = message.content.lower()
 
-    # Случайный ответ
+    # ===== Случайный ответ =====
     if message.channel.id == main_channel_id and random.randint(1, 100) <= attention_chance:
         msgs = [m async for m in message.channel.history(limit=20) if not m.author.bot]
         if msgs:
@@ -314,7 +309,7 @@ async def on_message(message):
                 {"role": "user", "content": (
                     f"Сегодня: {today_str}\n"
                     f"Сообщение пользователя: «{target.content}».\n"
-                    f"Автор — {'жена' if target.author.id == WIFE_ID else 'не жена'}, пол женщины.\n"
+                    f"Автор — {'жена' if is_wife else 'не жена'}, пол женщины.\n"
                     f"Обращение к автору как '{address}'.\n"
                     f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
                     f"Точная карта участница->муж:\n{id_to_husband_str}\n"
@@ -326,7 +321,7 @@ async def on_message(message):
             if reply_ds:
                 await target.reply(reply_ds, mention_author=False)
 
-    # "Посоветуй"
+    # ===== "Посоветуй" =====
     if "посоветуй" in content_lower:
         found_topic = None
         query = None
@@ -347,7 +342,7 @@ async def on_message(message):
                 {"role": "user", "content": (
                     f"Сегодня: {today_str}\n"
                     f"Вот найденные реальные объекты по теме '{found_topic}':\n{formatted_list}\n\n"
-                    f"Автор — {'жена' if message.author.id == WIFE_ID else 'не жена'}, пол женщины.\n"
+                    f"Автор — {'жена' if is_wife else 'не жена'}, пол женщины.\n"
                     f"Обращение к автору как '{address}'.\n"
                     f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
                     f"Точная карта участница->муж:\n{id_to_husband_str}\n"
@@ -361,13 +356,13 @@ async def on_message(message):
             if reply_ds:
                 await message.reply(reply_ds, mention_author=False)
 
-    # Обычный ответ
+    # ===== Обычный ответ =====
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": (
             f"Сегодня: {today_str}\n"
             f"{message.content}\n"
-            f"Автор — {'жена' if message.author.id == WIFE_ID else 'не жена'}, пол женщины.\n"
+            f"Автор — {'жена' if is_wife else 'не жена'}, пол женщины.\n"
             f"Обращение к автору как '{address}'.\n"
             f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
             f"Точная карта участница->муж:\n{id_to_husband_str}\n"
