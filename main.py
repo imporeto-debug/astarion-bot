@@ -146,8 +146,13 @@ def parse_results(data):
 
 # ================== DISCORD ==================
 
+# ✔ ФИКС 1: правильные интенты
 intents = discord.Intents.default()
 intents.message_content = True
+intents.guilds = True
+intents.members = True
+intents.messages = True
+
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 users_memory = load_users()
@@ -216,9 +221,10 @@ async def on_message(message):
 
             small_messages = [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Сообщение пользователя: «{target.content}».\n"
-                                            f"Нужен короткий ответ Астариона в стиле: {style}.\n"
-                                            f"3–6 предложений, полностью законченных."}
+                {"role": "user", "content": 
+                    f"Сообщение пользователя: «{target.content}».\n"
+                    f"Нужен короткий ответ Астариона в стиле: {style}.\n"
+                    f"3–6 предложений, полностью законченных."}
             ]
             random_reply = await ask_deepseek(small_messages, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
             if random_reply:
@@ -257,6 +263,9 @@ async def on_message(message):
             reply = await ask_deepseek(deepseek_prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
             if reply:
                 await message.reply(reply, mention_author=False)
+
+    # ✔ ФИКС 2: включить обработку других событий Discord
+    await bot.process_commands(message)
 
 # ================== ЗАПУСК БОТА ==================
 
