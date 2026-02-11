@@ -1,7 +1,7 @@
 import os
 import json
 import random
-from datetime import date
+from datetime import date, datetime, time
 import asyncio
 import aiohttp
 
@@ -48,7 +48,7 @@ Discord formatting rules:
 Knowledge rules:
 — Always use the provided list of participants and their husbands to answer questions.
 — You can enumerate, compare, analyze and discuss 'местных жен'.
-— Do not invent names, occupations, cities, or other facts about participants.
+— Never invent names, occupations, cities, or other facts about participants.
 — Never mention search engines or how you got information.
 — Present information naturally as if you already know it.
 
@@ -60,6 +60,18 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
 if not DISCORD_TOKEN or not DEEPSEEK_API_KEY:
     raise RuntimeError("Missing DISCORD_TOKEN or DEEPSEEK_API_KEY")
+
+WIFE_ID = 929347823693070387
+WIFE_CHANNEL_ID = 1464226944345182289
+CELEBRATION_CHANNEL_ID = 1385344250291421357
+
+HOLIDAYS = {
+    "14-02": "День всех влюблённых",
+    "08-03": "Международный женский день",
+    "12-06": "День России",
+    "31-12": "Новый год",
+    "07-01": "Рождество"
+}
 
 # ================== ВСПОМОГАТЕЛЬНОЕ ==================
 
@@ -126,8 +138,7 @@ def parse_results(data):
     if not data or "RelatedTopics" not in data: return []
     res = []
     for item in data["RelatedTopics"]:
-        if isinstance(item, dict) and "Text" in item:
-            res.append(item["Text"])
+        if isinstance(item, dict) and "Text" in item: res.append(item["Text"])
         elif isinstance(item, dict) and "Topics" in item:
             for sub in item["Topics"]:
                 if "Text" in sub: res.append(sub["Text"])
@@ -143,52 +154,82 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 users_memory = load_users()
 conversation_contexts: dict[str, dict] = {}
 
-RECOMMEND_TOPICS = ("музыка", "кино", "фильмы", "сериалы", "игры", "книги", "музеи", "красивые места")
-TOPIC_MAP = {
-    "музыка": "best music",
-    "кино": "best movies",
-    "фильмы": "best movies",
-    "сериалы": "best tv series",
-    "игры": "best games",
-    "книги": "best books",
-    "музеи": "best museums",
-    "красивые места": "best beautiful places"
-}
+# ================== ЗАДАЧИ ==================
 
-# ================== ДНИ РОЖДЕНИЯ ==================
+async def send_wife_message(topic: str):
+    channel = bot.get_channel(WIFE_CHANNEL_ID)
+    if not channel: return
+    prompt = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": (
+            f"Тема: {topic}. Напиши сообщение полностью от лица Астариона. "
+            "Короткое, интересное, индивидуальное. "
+            f"Естественно упомяни <@{WIFE_ID}>."
+        )}
+    ]
+    content = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+    if content:
+        await channel.send(f"<@{WIFE_ID}> {content}")
 
-def generate_birthday_message(name, is_wife=False):
-    if is_wife:
-        name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
-    return f"*медленно приближается*\n**С ДНЁМ РОЖДЕНИЯ, {name.upper()}**\n*Старайся не умереть сегодня.*"
+@tasks.loop(time=time(hour=20, minute=0))
+async def daily_wife_message():
+    await bot.wait_until_ready()
+    weekday = datetime.now().weekday()
+    topic = "приглашение в ресторан" if weekday == 6 else "как прошёл день, общение, новости, маленькие подарки"
+    await send_wife_message(topic)
 
-@tasks.loop(hours=24)
-async def birthday_check():
-    today = date.today().strftime("%d-%m")
+@tasks.loop(time=time(hour=14, minute=0))
+async def send_holiday_messages():
+    await bot.wait_until_ready()
+    today = datetime.today().strftime("%d-%m")
+    topic = HOLIDAYS.get(today)
+    if topic:
+        channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
+        if channel:
+            prompt = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": (
+                    f"Тема: {topic}. Поздравь всех участниц чата. "
+                    "Сообщение полностью от лица Астариона, индивидуально, интересно, без шаблонов."
+                )}
+            ]
+            content = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+            if content:
+                await channel.send(content)
+
+@tasks.loop(time=time(hour=14, minute=0))
+async def send_birthday_messages():
+    await bot.wait_until_ready()
+    today = datetime.today().strftime("%d-%m")
+    channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
+    if not channel: return
     for user_id, info in users_memory.items():
-        birthday = info.get("birthday")
-        if not birthday: continue
-        if birthday[:5] == today:
-            user = bot.get_user(int(user_id))
-            if user:
-                await user.send(generate_birthday_message(info.get("name", user_id), info.get("wife", False)))
+        birthday = info.get("birthday", "")
+        if birthday and birthday[:5] == today:
+            prompt = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": (
+                    f"Тема: день рождения. Поздравь <@{user_id}> полностью от лица Астариона, "
+                    "сообщение короткое, индивидуальное, интересное, без шаблонов, "
+                    "упоминая её особенности, интересы и характер, если известны."
+                )}
+            ]
+            content = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+            if content:
+                await channel.send(f"<@{user_id}> {content}")
 
-# ================== СОБЫТИЯ ==================
-
-@bot.event
-async def on_ready():
-    birthday_check.start()
-    print(f"🦇 Logged in as {bot.user}")
+# ================== ON_MESSAGE ==================
 
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
-    main_channel_id = 1464226944345182289
-    secondary_channel_id = 1385344250291421357
+    main_channel_id = WIFE_CHANNEL_ID
+    secondary_channel_id = CELEBRATION_CHANNEL_ID
     reply_needed = False
 
+    # Проверка канала и условий ответа
     if message.channel.id == main_channel_id:
         reply_needed = True
     elif message.channel.id == secondary_channel_id:
@@ -203,7 +244,7 @@ async def on_message(message):
     if not reply_needed:
         return
 
-    # ===== СЛУЧАЙНЫЙ ОТВЕТ (только для главного канала) =====
+    # ===== СЛУЧАЙНЫЙ ОТВЕТ =====
     if message.channel.id == main_channel_id and random.randint(1, 100) <= attention_chance:
         msgs = []
         async for m in message.channel.history(limit=20):
@@ -211,20 +252,20 @@ async def on_message(message):
                 msgs.append(m)
         if msgs:
             target = random.choice(msgs)
+            style = "нейтрально"
             txt = target.content.lower()
             if any(w in txt for w in ["плохо","тяжело","устал","груст","болит","хуже","проблем"]):
                 style = "поддержка"
             elif any(w in txt for w in ["классно","отлично","супер","рад","нравится","кайф"]):
                 style = "позитив"
-            else:
-                style = "нейтрально"
-            small_messages = [
-                {"role": "system","content": SYSTEM_PROMPT},
-                {"role": "user","content": f"Сообщение пользователя: «{target.content}».\nНужен короткий ответ Астариона в стиле: {style}.\n3–6 предложений, полностью законченных."}
+
+            prompt = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"Сообщение пользователя: «{target.content}».\nНужен короткий ответ Астариона в стиле: {style}.\n3–6 предложений, полностью законченных."}
             ]
-            random_reply = await ask_deepseek(small_messages, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-            if random_reply:
-                await target.reply(random_reply, mention_author=False)
+            reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+            if reply_ds:
+                await target.reply(reply_ds, mention_author=False)
 
     # ===== "ПОСОВЕТУЙ" =====
     content = message.content.lower()
@@ -243,24 +284,23 @@ async def on_message(message):
                 await message.reply("Не нашёл ничего подходящего.", mention_author=False)
                 return
             formatted_list = "\n".join(f"• {r}" for r in results)
-            deepseek_prompt = [
-                {"role":"system","content":SYSTEM_PROMPT},
-                {"role":"user","content":
-                 f"Вот найденные реальные объекты по теме '{found_topic}':\n{formatted_list}\n\nСделай список из 3–7 рекомендаций по теме запроса. Каждый пункт — одно короткое предложение от лица Астариона. Всего не более 15 предложений. Упоминай только реально существующие объекты."}
+            prompt = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"Вот найденные реальные объекты по теме '{found_topic}':\n{formatted_list}\n\nСделай список из 3–7 рекомендаций по теме запроса. Каждый пункт — одно короткое предложение от лица Астариона. Всего не более 15 предложений. Упоминай только реально существующие объекты."}
             ]
-            reply = await ask_deepseek(deepseek_prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-            if reply:
-                await message.reply(reply, mention_author=False)
+            reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+            if reply_ds:
+                await message.reply(reply_ds, mention_author=False)
 
-    # ===== ОБЫЧНЫЙ ОТВЕТ НА ВСЕ СООБЩЕНИЯ =====
-    messages_ds = [
-        {"role":"system","content":SYSTEM_PROMPT},
-        {"role":"user","content":message.content}
+    # ===== ОБЫЧНЫЙ ОТВЕТ =====
+    prompt = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": message.content}
     ]
-    reply_ds = await ask_deepseek(messages_ds, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+    reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
     if reply_ds:
         await message.reply(reply_ds, mention_author=False)
 
-# ================== ЗАПУСК БОТА ==================
+# ================== ЗАПУСК ==================
 
 bot.run(DISCORD_TOKEN)
