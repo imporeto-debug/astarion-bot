@@ -281,6 +281,19 @@ async def on_message(message):
         participants_info.append(f"А моя {affectionate_name}, разумеется, замужем за мной.")
     participants_info_str = "\n".join(participants_info)
 
+        # ===== Точная карта: userID -> имя мужа =====
+    id_to_husband = {}
+    for uid, info in users_memory.items():
+        hinfo = info.get("info", "")
+        if "married to" in hinfo:
+            husband = hinfo.split("married to ")[1].split(" from")[0]
+            id_to_husband[str(uid)] = husband
+
+    if is_wife:
+        id_to_husband[str(WIFE_ID)] = "Astarion Ancunin"
+
+    id_to_husband_str = json.dumps(id_to_husband, ensure_ascii=False)
+
     # ===== СЛУЧАЙНЫЙ ОТВЕТ, ПОСОВЕТУЙ И ОБЫЧНЫЙ ОТВЕТ =====
     content_lower = message.content.lower()
 
@@ -304,6 +317,7 @@ async def on_message(message):
                     f"Автор — {'жена' if target.author.id == WIFE_ID else 'не жена'}, пол женщины.\n"
                     f"Обращение к автору как '{address}'.\n"
                     f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
+                    Точная карта участница→муж:\n{id_to_husband_str}\n
                     f"Нужен короткий ответ Астариона в стиле: {style}.\n"
                     "3–6 предложений, полностью законченных."
                 )}
@@ -336,6 +350,7 @@ async def on_message(message):
                     f"Автор — {'жена' if message.author.id == WIFE_ID else 'не жена'}, пол женщины.\n"
                     f"Обращение к автору как '{address}'.\n"
                     f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
+                    Точная карта участница→муж:\n{id_to_husband_str}\n
                     "Сделай список из 3–7 рекомендаций по теме запроса. "
                     "Каждый пункт — одно короткое предложение от лица Астариона. "
                     "Всего не более 15 предложений. "
@@ -355,6 +370,7 @@ async def on_message(message):
             f"Автор — {'жена' if message.author.id == WIFE_ID else 'не жена'}, пол женщины.\n"
             f"Обращение к автору как '{address}'.\n"
             f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
+            Точная карта участница→муж:\n{id_to_husband_str}\n
             "Отвечай строго согласно этим данным, не придумывай новых имен или пар."
         )}
     ]
