@@ -343,6 +343,49 @@ async def on_message(message):
         f"Статус жены Астариона: {current_is_wife}\n"
     )
 
+    # =============== БЛОК «ПОСОВЕТУЙ» ====================
+    if "посоветуй" in content_lower:
+        found_topic = None
+        query = None
+
+        for topic in TOPIC_MAP:
+            if topic in content_lower:
+                found_topic = topic
+                query = TOPIC_MAP[topic]
+                break
+
+        if found_topic and query:
+            data = await duck_search(query)
+            results = parse_results(data)
+
+            if not results:
+                await message.reply("Не нашёл ничего подходящего.", mention_author=False)
+                return
+
+            formatted_list = "\n".join(f"• {r}" for r in results)
+
+            prompt = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": (
+                    f"Сегодня: {today_str}\n"
+                    f"Вот найденные реальные объекты по теме '{found_topic}':\n{formatted_list}\n\n"
+                    f"Автор — {'жена' if current_is_wife else 'не жена'}, пол женщины.\n"
+                    f"Обращение к автору как '{address}'.\n"
+                    f"Профиль участницы:\n{current_profile}\n"
+                    f"Список всех участниц:\n{participants_info_str}\n"
+                    "Сделай 3–7 рекомендаций. Каждый пункт — одно короткое предложение от лица Астариона. "
+                    "Только реальные объекты."
+                )}
+            ]
+
+            reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+
+            if reply_ds:
+                if current_is_wife:
+                    reply_ds = reply_ds.replace(f\"<@{WIFE_ID}>\", address)
+                await message.reply(reply_ds, mention_author=False)
+                return
+    
     # ===== Подготавливаем промпт =====
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
