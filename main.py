@@ -269,6 +269,9 @@ async def on_message(message):
     if not reply_needed:
         return
 
+    # ===== ДОБАВЛЕНО: фикс ошибки =====
+    content_lower = message.content.lower()
+
     # ===== Текущая дата =====
     today_str = datetime.now().strftime("%d-%m-%Y")
 
@@ -385,7 +388,7 @@ async def on_message(message):
                     reply_ds = reply_ds.replace(f"<@{WIFE_ID}>", address)
                 await message.reply(reply_ds, mention_author=False)
                 return
-    
+
     # ===== Подготавливаем промпт =====
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
