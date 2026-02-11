@@ -259,33 +259,44 @@ async def on_message(message):
 
     today_str = datetime.now().strftime("%d-%m-%Y")
 
-    # ===== Определяем статус жены и обращение =====
-    user_info = users_memory.get(str(message.author.id))
-    is_wife = user_info is not None and user_info.get("wife", False)
-
+    # ===== Определяем жену и обращение =====
+    is_wife = message.author.id == WIFE_ID
     if is_wife:
         affectionate_name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
         address = affectionate_name
     else:
         address = "дорогая"
 
-    # ===== Подготовка информации о женах =====
+    # ===== Подготовка информации о женах и участницах =====
     participants_info = []
     id_to_husband = {}
 
     for uid, info in users_memory.items():
-        name = info.get("name", "")
+        name = info.get("name", "Неизвестно")
         husband_info = info.get("info", "")
+        hobby = info.get("hobby", "")
+        birthday = info.get("birthday", "")
+        
         married_to = ""
         if "married to" in husband_info:
             married_to = husband_info.split("married to ")[1].split(" from")[0]
-        participants_info.append(f"{name} замужем за {married_to}")
+        
+        # Формируем справку для промпта
+        participant_str = f"{name} замужем за {married_to}"
+        if hobby:
+            participant_str += f", увлечения: {hobby}"
+        if birthday:
+            participant_str += f", день рождения: {birthday}"
+        
+        participants_info.append(participant_str)
+        
         if married_to:
             id_to_husband[str(uid)] = married_to
 
+    # Добавляем жену Астариона
     if is_wife:
         participants_info.append(f"А моя {affectionate_name}, разумеется, замужем за мной.")
-        id_to_husband[str(message.author.id)] = "Astarion Ancunin"
+        id_to_husband[str(WIFE_ID)] = "Astarion Ancunin"
 
     participants_info_str = "\n".join(participants_info)
     id_to_husband_str = json.dumps(id_to_husband, ensure_ascii=False)
@@ -309,7 +320,7 @@ async def on_message(message):
                 {"role": "user", "content": (
                     f"Сегодня: {today_str}\n"
                     f"Сообщение пользователя: «{target.content}».\n"
-                    f"Автор — {'жена' if is_wife else 'не жена'}, пол женщины.\n"
+                    f"Автор — {'жена' if target.author.id == WIFE_ID else 'не жена'}, пол женщины.\n"
                     f"Обращение к автору как '{address}'.\n"
                     f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
                     f"Точная карта участница->муж:\n{id_to_husband_str}\n"
