@@ -258,6 +258,15 @@ async def on_message(message):
             if reply:
                 await message.reply(reply, mention_author=False)
 
+    # ====== ОБЫЧНЫЙ ОТВЕТ НА ВСЕ СООБЩЕНИЯ ======
+    messages_ds = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": message.content}
+    ]
+    reply_ds = await ask_deepseek(messages_ds, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+    if reply_ds:
+        await message.reply(reply_ds, mention_author=False)
+
 # ================== ЗАПУСК БОТА ==================
 
 bot.run(DISCORD_TOKEN)
