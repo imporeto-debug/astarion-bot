@@ -245,7 +245,7 @@ async def send_birthday_messages():
 
 # ================== ON_MESSAGE ==================
 
-            @bot.event
+@bot.event
 async def on_message(message):
     if message.author.bot:
         return
