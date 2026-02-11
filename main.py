@@ -269,37 +269,47 @@ async def on_message(message):
         return
 
     today_str = datetime.now().strftime("%d-%m-%Y")
-    is_wife = message.author.id == WIFE_ID
-    affectionate_name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"]) if is_wife else ""
-    address = affectionate_name if is_wife else "дорогая"
 
-    # ===== Подготовка участников и их справки =====
+    # ===== Определяем жену и обращение =====
+    is_wife = message.author.id == WIFE_ID
+    if is_wife:
+        affectionate_name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
+        address = affectionate_name
+    else:
+        address = "дорогая"
+
+    # ===== Подготовка информации о женах и участницах =====
     participants_info = []
     id_to_husband = {}
+
     for uid, info in users_memory.items():
         name = info.get("name", "Неизвестно")
+        husband_info = info.get("info", "")
         hobby = info.get("hobby", "")
         birthday = info.get("birthday", "")
-        husband_info = info.get("info", "")
+        
         married_to = ""
         if "married to" in husband_info:
             married_to = husband_info.split("married to ")[1].split(" from")[0]
-
+        
         participant_str = f"{name} замужем за {married_to}"
         if hobby:
             participant_str += f", увлечения: {hobby}"
         if birthday:
             participant_str += f", день рождения: {birthday}"
+        
         participants_info.append(participant_str)
+        
         if married_to:
             id_to_husband[str(uid)] = married_to
 
-    if is_wife:
-        participants_info.append(f"А моя {affectionate_name}, разумеется, замужем за мной.")
-        id_to_husband[str(WIFE_ID)] = "Astarion Ancunin"
+    # Добавляем жену Астариона
+    participants_info.append(f"А моя {affectionate_name}, разумеется, замужем за мной.")
+    id_to_husband[str(WIFE_ID)] = "Astarion Ancunin"
 
     participants_info_str = "\n".join(participants_info)
     id_to_husband_str = json.dumps(id_to_husband, ensure_ascii=False)
+
     content_lower = message.content.lower()
 
     # ===== Случайный ответ =====
@@ -307,10 +317,6 @@ async def on_message(message):
         msgs = [m async for m in message.channel.history(limit=20) if not m.author.bot]
         if msgs:
             target = random.choice(msgs)
-            if target.author.id == WIFE_ID:
-                target_name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
-            else:
-                target_name = users_memory.get(str(target.author.id), {}).get("name", "Дорогая")
             style = "нейтрально"
             txt = target.content.lower()
             if any(w in txt for w in ["плохо","тяжело","устал","груст","болит","хуже","проблем"]):
@@ -324,7 +330,7 @@ async def on_message(message):
                     f"Сегодня: {today_str}\n"
                     f"Сообщение пользователя: «{target.content}».\n"
                     f"Автор — {'жена' if target.author.id == WIFE_ID else 'не жена'}, пол женщины.\n"
-                    f"Обращение к автору как '{target_name}'.\n"
+                    f"Обращение к автору как '{address}'.\n"
                     f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
                     f"Точная карта участница->муж:\n{id_to_husband_str}\n"
                     f"Нужен короткий ответ Астариона в стиле: {style}.\n"
@@ -333,7 +339,8 @@ async def on_message(message):
             ]
             reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
             if reply_ds:
-                reply_ds = reply_ds.replace(f"<@{target.author.id}>", target_name)
+                if target.author.id == WIFE_ID:
+                    reply_ds = reply_ds.replace(f"<@{WIFE_ID}>", affectionate_name)
                 await target.reply(reply_ds, mention_author=False)
 
     # ===== "Посоветуй" =====
@@ -369,27 +376,29 @@ async def on_message(message):
             ]
             reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
             if reply_ds:
+                if is_wife:
+                    reply_ds = reply_ds.replace(f"<@{WIFE_ID}>", affectionate_name)
                 await message.reply(reply_ds, mention_author=False)
 
     # ===== Обычный ответ =====
-prompt = [
-    {"role": "system", "content": SYSTEM_PROMPT},
-    {"role": "user", "content": (
-        f"Сегодня: {today_str}\n"
-        f"{message.content}\n"
-        f"Автор — {'жена' if is_wife else 'не жена'}, пол женщины.\n"
-        f"Обращение к автору как '{address}'.\n"
-        f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
-        f"Точная карта участница->муж:\n{id_to_husband_str}\n"
-        "Отвечай строго согласно этим данным, не придумывай новых имен или пар."
-    )}
-]
+    prompt = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": (
+            f"Сегодня: {today_str}\n"
+            f"{message.content}\n"
+            f"Автор — {'жена' if is_wife else 'не жена'}, пол женщины.\n"
+            f"Обращение к автору как '{address}'.\n"
+            f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
+            f"Точная карта участница->муж:\n{id_to_husband_str}\n"
+            "Отвечай строго согласно этим данным, не придумывай новых имен или пар."
+        )}
+    ]
+    reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+    if reply_ds:
+        if is_wife:
+            reply_ds = reply_ds.replace(f"<@{WIFE_ID}>", affectionate_name)
+        await message.reply(reply_ds, mention_author=False)
 
-reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-if reply_ds:
-    if is_wife:
-        reply_ds = reply_ds.replace(f"<@{WIFE_ID}>", affectionate_name)
-    await message.reply(reply_ds, mention_author=False)
 
 # ================== ЗАПУСК ==================
 
