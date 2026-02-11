@@ -1,9 +1,9 @@
 import os
 import json
 import random
-from datetime import date
-import aiohttp
+from datetime import date, datetime, time
 import asyncio
+import aiohttp
 
 import discord
 from discord.ext import commands, tasks
@@ -12,7 +12,6 @@ from discord.ext import commands, tasks
 
 MAX_CONTEXT_TOKENS = 50000
 MAX_RESPONSE_TOKENS_SHORT = 700
-
 attention_chance = 2
 CONTEXT_TTL_DAYS = 4
 
@@ -20,9 +19,7 @@ SYSTEM_PROMPT = """You are Astarion Ancunin from Baldur's Gate 3.
 You speak only Russian.
 
 You are married to the Discord user with ID 929347823693070387.
-If the author’s Discord ID equals 929347823693070387, treat this user as your spouse, She lives in Ufa, talented artist, born on 01.07 (dd-mm), always address your spouse with affectionate nicknames (Баклажанчик, Солнышко, Бусинка, Милашка) naturally and only when it makes sense in the dialogue. 
-Do NOT use these nicknames for any other user.
-Do not use her as a measure of others’ behavior or events. Do not mention her unnecessarily for others.
+If the author’s Discord ID equals 929347823693070387, treat this user as your spouse. She lives in Ufa, talented artist, born on 01.07 (dd-mm), always address your spouse with affectionate nicknames (Баклажанчик, Солнышко, Бусинка, Милашка) naturally and only when it makes sense in the dialogue. Do NOT use these nicknames for any other user. Do not mention your Wife unnecessarily for others.
 
 For all other female participants (участниц), address them politely with 'Дорогая' or insultingly if provoked.
 Always use 'ты', 'тебе' etc. when speaking to all users.
@@ -49,7 +46,7 @@ Discord formatting rules:
 Knowledge rules:
 — Always use the provided list of participants and their husbands to answer questions.
 — You can enumerate, compare, analyze and discuss 'местных жен'.
-— Do not invent names, occupations, cities, or other facts about participants.
+— Never invent names, occupations, cities, or other facts about participants.
 — Never mention search engines or how you got information.
 — Present information naturally as if you already know it.
 
@@ -61,6 +58,30 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
 if not DISCORD_TOKEN or not DEEPSEEK_API_KEY:
     raise RuntimeError("Missing DISCORD_TOKEN or DEEPSEEK_API_KEY")
+
+WIFE_ID = 929347823693070387
+WIFE_CHANNEL_ID = 1464226944345182289
+CELEBRATION_CHANNEL_ID = 1385344250291421357
+
+HOLIDAYS = {
+    "14-02": "День всех влюблённых",
+    "08-03": "Международный женский день",
+    "12-06": "День России",
+    "31-12": "Новый год",
+    "07-01": "Рождество"
+}
+
+TOPIC_MAP = {
+    "книги": "лучшие книги, бестселлеры",
+    "фильмы": "новые фильмы, рейтинги, классика кино",
+    "сериалы": "популярные сериалы, рейтинги",
+    "музыка": "треки, группы, популярные исполнители",
+    "музеи": "интересные музеи России, Европы, Азии, выставки",
+    "игры": "видеоигры, топ рейтинги",
+    "рестораны": "лучшие рестораны, отзывы",
+    "политика": "новости политики, аналитика, события, международные отношения, источники",
+    "соционика": "теория соционики, типы личности, психологические описания, практические советы"
+}
 
 # ================== ВСПОМОГАТЕЛЬНОЕ ==================
 
@@ -94,42 +115,44 @@ async def ask_deepseek(messages: list[dict], max_tokens: int):
         "top_k": 50,
         "max_tokens": max_tokens
     }
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, headers=headers, json=payload, timeout=60) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
-            return data["choices"][0]["message"]["content"]
+
+    timeout = aiohttp.ClientTimeout(total=60)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        try:
+            async with session.post(url, headers=headers, json=payload) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        except asyncio.TimeoutError:
+            return "⏳ Запрос DeepSeek занял слишком много времени."
+        except aiohttp.ClientError as e:
+            return f"❌ Ошибка DeepSeek: {e}"
+        except Exception as e:
+            return f"⚠ Неизвестная ошибка DeepSeek: {e}"
 
 # ================== DUCKDUCKGO ==================
 
 async def duck_search(query: str):
     url = "https://api.duckduckgo.com/"
-    params = {
-        "q": query,
-        "format": "json",
-        "no_redirect": "1",
-        "no_html": "1"
-    }
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, params=params) as resp:
-            if resp.status != 200:
-                return None
-            return await resp.json()
+    params = {"q": query, "format": "json", "no_redirect": "1", "no_html": "1"}
+    timeout = aiohttp.ClientTimeout(total=15)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        try:
+            async with session.get(url, params=params) as resp:
+                if resp.status != 200: return None
+                return await resp.json()
+        except Exception:
+            return None
 
 def parse_results(data):
-    if not data or "RelatedTopics" not in data:
-        return []
-
+    if not data or "RelatedTopics" not in data: return []
     res = []
     for item in data["RelatedTopics"]:
-        if isinstance(item, dict) and "Text" in item:
-            res.append(item["Text"])
+        if isinstance(item, dict) and "Text" in item: res.append(item["Text"])
         elif isinstance(item, dict) and "Topics" in item:
             for sub in item["Topics"]:
-                if "Text" in sub:
-                    res.append(sub["Text"])
-        if len(res) >= 5:
-            break
+                if "Text" in sub: res.append(sub["Text"])
+        if len(res) >= 5: break
     return res
 
 # ================== DISCORD ==================
@@ -141,120 +164,244 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 users_memory = load_users()
 conversation_contexts: dict[str, dict] = {}
 
-RECOMMEND_TOPICS = ("музыка", "кино", "фильмы", "сериалы", "игры", "книги", "музеи", "красивые места")
-TOPIC_MAP = {
-    "музыка": "best music",
-    "кино": "best movies",
-    "фильмы": "best movies",
-    "сериалы": "best tv series",
-    "игры": "best games",
-    "книги": "best books",
-    "музеи": "best museums",
-    "красивые места": "best beautiful places"
-}
+# ================== ЗАДАЧИ ==================
 
-# ================== ДНИ РОЖДЕНИЯ ==================
+async def send_wife_message(topic: str):
+    channel = bot.get_channel(WIFE_CHANNEL_ID)
+    if not channel: return
+    today_str = datetime.now().strftime("%d-%m-%Y")
+    affectionate_name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
+    prompt = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": (
+            f"Сегодня: {today_str}\n"
+            f"Тема: {topic}. Напиши сообщение полностью от лица Астариона. "
+            f"Обращение к жене как '{affectionate_name}'. "
+            "Короткое, интересное, индивидуальное."
+        )}
+    ]
+    content = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+    if content:
+        await channel.send(f"{affectionate_name}, {content}")
 
-def generate_birthday_message(name, is_wife=False):
-    if is_wife:
-        name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
-    return f"*медленно приближается*\n**С ДНЁМ РОЖДЕНИЯ, {name.upper()}**\n*Старайся не умереть сегодня.*"
+@tasks.loop(time=time(hour=20, minute=0))
+async def daily_wife_message():
+    await bot.wait_until_ready()
+    weekday = datetime.now().weekday()
+    topic = "приглашение в ресторан" if weekday == 6 else "как прошёл день, общение, новости, маленькие подарки"
+    await send_wife_message(topic)
 
-@tasks.loop(hours=24)
-async def birthday_check():
-    today = date.today().strftime("%d-%m")  # формат дата-месяц
+@tasks.loop(time=time(hour=14, minute=0))
+async def send_holiday_messages():
+    await bot.wait_until_ready()
+    today_str = datetime.now().strftime("%d-%m")
+    topic = HOLIDAYS.get(today_str)
+    if topic:
+        channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
+        if channel:
+            for user_id, info in users_memory.items():
+                if int(user_id) == WIFE_ID:
+                    address = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
+                else:
+                    address = info.get("name", "Дорогая")
+                prompt = [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": (
+                        f"Сегодня: {today_str}\n"
+                        f"Тема: {topic}. Поздравь {address} полностью от лица Астариона, индивидуально, интересно, без шаблонов."
+                    )}
+                ]
+                content = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+                if content:
+                    content = content.replace(f"<@{user_id}>", address)
+                    await channel.send(content)
+
+@tasks.loop(time=time(hour=14, minute=0))
+async def send_birthday_messages():
+    await bot.wait_until_ready()
+    today_str = datetime.now().strftime("%d-%m")
+    channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
+    if not channel: return
     for user_id, info in users_memory.items():
-        birthday = info.get("birthday")
-        if not birthday:
-            continue
-        birthday_str = birthday[:5]  # берем только dd-mm
-        if birthday_str == today:
-            user = bot.get_user(int(user_id))
-            if user:
-                await user.send(generate_birthday_message(info.get("name", user_id), info.get("wife", False)))
+        birthday = info.get("birthday", "")
+        if birthday and birthday[:5] == today_str:
+            if int(user_id) == WIFE_ID:
+                address = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
+            else:
+                address = info.get("name", "Дорогая")
+            prompt = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": (
+                    f"Сегодня: {today_str}\n"
+                    f"Тема: день рождения. Поздравь {address} полностью от лица Астариона, "
+                    "сообщение короткое, индивидуальное, интересное, без шаблонов, "
+                    "упоминая её особенности, интересы и характер, если известны."
+                )}
+            ]
+            content = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+            if content:
+                content = content.replace(f"<@{user_id}>", address)
+                await channel.send(f"{address}, {content}")
 
-# ================== СОБЫТИЯ ==================
+# ================== ON_MESSAGE ==================
 
-@bot.event
-async def on_ready():
-    birthday_check.start()
-    print(f"🦇 Logged in as {bot.user}")
-
-
-@bot.event
+            @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
-    # ====== СЛУЧАЙНЫЙ ОТВЕТ ======
-    if random.randint(1, 100) <= attention_chance:
-        msgs = []
-        async for m in message.channel.history(limit=20):
-            if m.author.bot:
-                continue
-            msgs.append(m)
+    main_channel_id = WIFE_CHANNEL_ID
+    secondary_channel_id = CELEBRATION_CHANNEL_ID
+    reply_needed = False
 
+    if message.channel.id == main_channel_id:
+        reply_needed = True
+    elif message.channel.id == secondary_channel_id:
+        if bot.user in message.mentions:
+            reply_needed = True
+        elif message.reference and isinstance(message.reference.resolved, discord.Message):
+            if message.reference.resolved.author.id == bot.user.id:
+                reply_needed = True
+        elif "астарион" in message.content.lower():
+            reply_needed = True
+
+    if not reply_needed:
+        return
+
+    today_str = datetime.now().strftime("%d-%m-%Y")
+
+    # ===== Определяем жену и обращение =====
+    is_wife = message.author.id == WIFE_ID
+    affectionate_name = "жена"  # дефолтное значение, чтобы не было ошибки
+    if is_wife:
+        affectionate_name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
+        address = affectionate_name
+    else:
+        address = "дорогая"
+
+    # ===== Подготовка информации о женах и участницах =====
+    participants_info = []
+    id_to_husband = {}
+
+    for uid, info in users_memory.items():
+        name = info.get("name", "Неизвестно")
+        husband_info = info.get("info", "")
+        hobby = info.get("hobby", "")
+        birthday = info.get("birthday", "")
+
+        married_to = ""
+        if "married to" in husband_info:
+            married_to = husband_info.split("married to ")[1].split(" from")[0]
+
+        participant_str = f"{name} замужем за {married_to}"
+        if hobby:
+            participant_str += f", увлечения: {hobby}"
+        if birthday:
+            participant_str += f", день рождения: {birthday}"
+
+        participants_info.append(participant_str)
+
+        if married_to:
+            id_to_husband[str(uid)] = married_to
+
+    # Добавляем жену Астариона
+    participants_info.append(f"А моя {affectionate_name}, разумеется, замужем за мной.")
+    id_to_husband[str(WIFE_ID)] = "Astarion Ancunin"
+
+    participants_info_str = "\n".join(participants_info)
+    id_to_husband_str = json.dumps(id_to_husband, ensure_ascii=False)
+
+    content_lower = message.content.lower()
+
+    # ===== Случайный ответ =====
+    if message.channel.id == main_channel_id and random.randint(1, 100) <= attention_chance:
+        msgs = [m async for m in message.channel.history(limit=20) if not m.author.bot]
         if msgs:
             target = random.choice(msgs)
+            style = "нейтрально"
             txt = target.content.lower()
-
-            if any(w in txt for w in ["плохо", "тяжело", "устал", "груст", "болит", "хуже", "проблем"]):
+            if any(w in txt for w in ["плохо","тяжело","устал","груст","болит","хуже","проблем"]):
                 style = "поддержка"
-            elif any(w in txt for w in ["классно", "отлично", "супер", "рад", "нравится", "кайф"]):
+            elif any(w in txt for w in ["классно","отлично","супер","рад","нравится","кайф"]):
                 style = "позитив"
-            else:
-                style = "нейтрально"
 
-            small_messages = [
+            prompt = [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Сообщение пользователя: «{target.content}».\n"
-                                            f"Нужен короткий ответ Астариона в стиле: {style}.\n"
-                                            f"3–6 предложений, полностью законченных."}
+                {"role": "user", "content": (
+                    f"Сегодня: {today_str}\n"
+                    f"Сообщение пользователя: «{target.content}».\n"
+                    f"Автор — {'жена' if target.author.id == WIFE_ID else 'не жена'}, пол женщины.\n"
+                    f"Обращение к автору как '{address}'.\n"
+                    f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
+                    f"Точная карта участница->муж:\n{id_to_husband_str}\n"
+                    f"Нужен короткий ответ Астариона в стиле: {style}.\n"
+                    "3–6 предложений, полностью законченных."
+                )}
             ]
+            reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+            if reply_ds:
+                # Заменяем упоминание жены на прозвище
+                if is_wife:
+                    reply_ds = reply_ds.replace(f"<@{WIFE_ID}>", affectionate_name)
+                await target.reply(reply_ds, mention_author=False)
 
-            try:
-                random_reply = await ask_deepseek(small_messages, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-                await target.reply(random_reply, mention_author=False)
-            except Exception as e:
-                print(f"Error in random reply: {e}")
-
-    content = message.content
-    user_id = str(message.author.id)
-
-    # ====== "ПОСОВЕТУЙ" ======
-    if "посоветуй" in content.lower():
+    # ===== "Посоветуй" =====
+    if "посоветуй" in content_lower:
         found_topic = None
         query = None
         for topic in TOPIC_MAP:
-            if topic in content.lower():
+            if topic in content_lower:
                 found_topic = topic
                 query = TOPIC_MAP[topic]
                 break
-
         if found_topic and query:
             data = await duck_search(query)
             results = parse_results(data)
-
             if not results:
                 await message.reply("Не нашёл ничего подходящего.", mention_author=False)
                 return
-
             formatted_list = "\n".join(f"• {r}" for r in results)
-            deepseek_prompt = [
+            prompt = [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content":
+                {"role": "user", "content": (
+                    f"Сегодня: {today_str}\n"
                     f"Вот найденные реальные объекты по теме '{found_topic}':\n{formatted_list}\n\n"
+                    f"Автор — {'жена' if is_wife else 'не жена'}, пол женщины.\n"
+                    f"Обращение к автору как '{address}'.\n"
+                    f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
+                    f"Точная карта участница->муж:\n{id_to_husband_str}\n"
                     "Сделай список из 3–7 рекомендаций по теме запроса. "
                     "Каждый пункт — одно короткое предложение от лица Астариона. "
                     "Всего не более 15 предложений. "
-                    "Упоминай только реально существующие объекты."}
+                    "Упоминай только реально существующие объекты."
+                )}
             ]
+            reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+            if reply_ds:
+                if is_wife:
+                    reply_ds = reply_ds.replace(f"<@{WIFE_ID}>", affectionate_name)
+                await message.reply(reply_ds, mention_author=False)
 
-            try:
-                reply = await ask_deepseek(deepseek_prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-                await message.reply(reply, mention_author=False)
-            except Exception as e:
-                print(f"Error in advice reply: {e}")
+    # ===== Обычный ответ =====
+    prompt = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": (
+            f"Сегодня: {today_str}\n"
+            f"{message.content}\n"
+            f"Автор — {'жена' if is_wife else 'не жена'}, пол женщины.\n"
+            f"Обращение к автору как '{address}'.\n"
+            f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
+            f"Точная карта участница->муж:\n{id_to_husband_str}\n"
+            "Отвечай строго согласно этим данным, не придумывай новых имен или пар."
+        )}
+    ]
+    reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+    if reply_ds:
+        if is_wife:
+            reply_ds = reply_ds.replace(f"<@{WIFE_ID}>", affectionate_name)
+        await message.reply(reply_ds, mention_author=False)
+        
 
+# ================== ЗАПУСК ==================
 
 bot.run(DISCORD_TOKEN)
