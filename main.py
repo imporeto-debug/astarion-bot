@@ -372,23 +372,24 @@ async def on_message(message):
                 await message.reply(reply_ds, mention_author=False)
 
     # ===== Обычный ответ =====
-    prompt = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": (
-            f"Сегодня: {today_str}\n"
-            f"{message.content}\n"
-            f"Автор — {'жена' if is_wife else 'не жена'}, пол женщины.\n"
-            f"Обращение к автору как '{address}'.\n"
-            f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
-            f"Точная карта участница->муж:\n{id_to_husband_str}\n"
-            "Отвечай строго согласно этим данным, не придумывай новых имен или пар."
-        )}
-    ]
-        reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-    if reply_ds:
-        if is_wife:
-            reply_ds = reply_ds.replace(f"<@{WIFE_ID}>", affectionate_name)
-        await message.reply(reply_ds, mention_author=False)
+prompt = [
+    {"role": "system", "content": SYSTEM_PROMPT},
+    {"role": "user", "content": (
+        f"Сегодня: {today_str}\n"
+        f"{message.content}\n"
+        f"Автор — {'жена' if is_wife else 'не жена'}, пол женщины.\n"
+        f"Обращение к автору как '{address}'.\n"
+        f"Точные данные о женах и их мужьях:\n{participants_info_str}\n"
+        f"Точная карта участница->муж:\n{id_to_husband_str}\n"
+        "Отвечай строго согласно этим данным, не придумывай новых имен или пар."
+    )}
+]
+
+reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+if reply_ds:
+    if is_wife:
+        reply_ds = reply_ds.replace(f"<@{WIFE_ID}>", affectionate_name)
+    await message.reply(reply_ds, mention_author=False)
 
 # ================== ЗАПУСК ==================
 
