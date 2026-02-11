@@ -272,6 +272,7 @@ async def on_message(message):
 
     # ===== Определяем жену и обращение =====
     is_wife = message.author.id == WIFE_ID
+    affectionate_name = "жена"  # дефолтное значение, чтобы не было ошибки
     if is_wife:
         affectionate_name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
         address = affectionate_name
@@ -287,19 +288,19 @@ async def on_message(message):
         husband_info = info.get("info", "")
         hobby = info.get("hobby", "")
         birthday = info.get("birthday", "")
-        
+
         married_to = ""
         if "married to" in husband_info:
             married_to = husband_info.split("married to ")[1].split(" from")[0]
-        
+
         participant_str = f"{name} замужем за {married_to}"
         if hobby:
             participant_str += f", увлечения: {hobby}"
         if birthday:
             participant_str += f", день рождения: {birthday}"
-        
+
         participants_info.append(participant_str)
-        
+
         if married_to:
             id_to_husband[str(uid)] = married_to
 
@@ -339,7 +340,8 @@ async def on_message(message):
             ]
             reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
             if reply_ds:
-                if target.author.id == WIFE_ID:
+                # Заменяем упоминание жены на прозвище
+                if is_wife:
                     reply_ds = reply_ds.replace(f"<@{WIFE_ID}>", affectionate_name)
                 await target.reply(reply_ds, mention_author=False)
 
