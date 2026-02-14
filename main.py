@@ -467,6 +467,8 @@ async def on_message(message):
             })
             if len(conversation_history[MEMORY_CHANNEL_ID]) > MAX_HISTORY_MESSAGES:
                 conversation_history[MEMORY_CHANNEL_ID] = conversation_history[MEMORY_CHANNEL_ID][-MAX_HISTORY_MESSAGES:]
+    return
+    
 
 @bot.event
 async def on_ready():
