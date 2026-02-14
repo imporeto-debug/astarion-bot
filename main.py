@@ -187,8 +187,9 @@ async def send_wife_message(topic: str):
         )}
     ]
     content = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-    if content:
-        await channel.send(f"{affectionate_name}, {content}")
+if content:
+    wife_mention = "<@929347823693070387>"
+    await channel.send(f"{wife_mention} {affectionate_name}, {content}")
 
 @tasks.loop(time=time(hour=20, minute=0))
 async def daily_wife_message():
