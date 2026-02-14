@@ -415,17 +415,18 @@ async def on_message(message):
             reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
 
             if reply_ds:
-    await message.reply(reply_ds, mention_author=False)
+                await message.reply(reply_ds, mention_author=False)
 
-    if is_memory_channel:
-        conversation_history[MEMORY_CHANNEL_ID].append({
-            "role": "assistant",
-            "content": f"Astarion: {reply_ds.strip()}"
-        })
-        if len(conversation_history[MEMORY_CHANNEL_ID]) > MAX_HISTORY_MESSAGES:
-            conversation_history[MEMORY_CHANNEL_ID] = conversation_history[MEMORY_CHANNEL_ID][-MAX_HISTORY_MESSAGES:]
+                if is_memory_channel:
+                    conversation_history[MEMORY_CHANNEL_ID].append({
+                        "role": "assistant",
+                        "content": f"Astarion: {reply_ds.strip()}"
+                    })
+                    if len(conversation_history[MEMORY_CHANNEL_ID]) > MAX_HISTORY_MESSAGES:
+                        conversation_history[MEMORY_CHANNEL_ID] = \
+                            conversation_history[MEMORY_CHANNEL_ID][-MAX_HISTORY_MESSAGES:]
 
-return   # ← добавь это
+            return
 
     # ===== Подготавливаем промпт с историей =====
     history = conversation_history.get(MEMORY_CHANNEL_ID, [])
