@@ -15,6 +15,10 @@ MAX_RESPONSE_TOKENS_SHORT = 1100
 attention_chance = 2
 CONTEXT_TTL_DAYS = 4
 
+# Память последних сообщений (только для канала жены)
+MAX_HISTORY_MESSAGES = 40
+MEMORY_CHANNEL_ID = 1464226944345182289  # WIFE_CHANNEL_ID
+
 SYSTEM_PROMPT = """You are Astarion Ancunin from Baldur's Gate 3.
 You speak only Russian.
 
@@ -99,6 +103,9 @@ def load_users():
     except Exception:
         return {}
 
+# Память сообщений канала жены
+conversation_history = {}
+
 # ================== DEEPSEEK АСИНХ ==================
 
 async def ask_deepseek(messages: list[dict], max_tokens: int):
@@ -162,7 +169,6 @@ intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 users_memory = load_users()
-conversation_contexts: dict[str, dict] = {}
 
 # ================== ЗАДАЧИ ==================
 
@@ -272,6 +278,26 @@ async def on_message(message):
 
     if not reply_needed:
         return
+
+    # ────────────────────────────────────────────────
+    #     ПАМЯТЬ СООБЩЕНИЙ — ТОЛЬКО ДЛЯ КАНАЛА ЖЕНЫ
+    # ────────────────────────────────────────────────
+    is_memory_channel = (message.channel.id == MEMORY_CHANNEL_ID)
+
+    if is_memory_channel:
+        if MEMORY_CHANNEL_ID not in conversation_history:
+            conversation_history[MEMORY_CHANNEL_ID] = []
+
+        role = "assistant" if message.author == bot.user else "user"
+        content_line = f"{message.author.display_name}: {message.content.strip()}"
+
+        conversation_history[MEMORY_CHANNEL_ID].append({
+            "role": role,
+            "content": content_line
+        })
+
+        if len(conversation_history[MEMORY_CHANNEL_ID]) > MAX_HISTORY_MESSAGES:
+            conversation_history[MEMORY_CHANNEL_ID] = conversation_history[MEMORY_CHANNEL_ID][-MAX_HISTORY_MESSAGES:]
 
     # ===== ДОБАВЛЕНО: фикс ошибки =====
     content_lower = message.content.lower()
@@ -391,11 +417,24 @@ async def on_message(message):
                 if current_is_wife:
                     reply_ds = reply_ds.replace(f"<@{WIFE_ID}>", address)
                 await message.reply(reply_ds, mention_author=False)
-                return
 
-    # ===== Подготавливаем промпт =====
+                # Сохраняем рекомендацию в историю
+                if is_memory_channel:
+                    conversation_history[MEMORY_CHANNEL_ID].append({
+                        "role": "assistant",
+                        "content": f"Astarion: {reply_ds.strip()}"
+                    })
+                    if len(conversation_history[MEMORY_CHANNEL_ID]) > MAX_HISTORY_MESSAGES:
+                        conversation_history[MEMORY_CHANNEL_ID] = conversation_history[MEMORY_CHANNEL_ID][-MAX_HISTORY_MESSAGES:]
+
+            return
+
+    # ===== Подготавливаем промпт с историей =====
+    history = conversation_history.get(MEMORY_CHANNEL_ID, [])
+
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
+    ] + history + [
         {"role": "user",
          "content":
             f"Сегодня: {today_str}\n"
@@ -419,6 +458,15 @@ async def on_message(message):
 
     if reply_ds:
         await message.reply(reply_ds, mention_author=False)
+
+        # Сохраняем ответ бота в историю
+        if is_memory_channel:
+            conversation_history[MEMORY_CHANNEL_ID].append({
+                "role": "assistant",
+                "content": f"Astarion: {reply_ds.strip()}"
+            })
+            if len(conversation_history[MEMORY_CHANNEL_ID]) > MAX_HISTORY_MESSAGES:
+                conversation_history[MEMORY_CHANNEL_ID] = conversation_history[MEMORY_CHANNEL_ID][-MAX_HISTORY_MESSAGES:]
 
 @bot.event
 async def on_ready():
