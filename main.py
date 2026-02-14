@@ -196,27 +196,31 @@ async def send_holiday_messages():
     await bot.wait_until_ready()
     today_str = datetime.now().strftime("%d-%m")
     topic = HOLIDAYS.get(today_str)
-    if topic:
-        channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
-        if channel:
-            for user_id, info in users_memory.items():
-                if int(user_id) == WIFE_ID:
-                    address = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
-                else:
-                    address = info.get("name", "Дорогая")
-                prompt = [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": (
-                        f"Сегодня: {today_str}\n"
-                        f"Тема: {topic}. Поздравь {address} полностью от лица Астариона, индивидуально, интересно, без шаблонов."
-                    )}
-                ]
-                content = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-                if content:
-                    content = content.replace(f"<@{user_id}>", address)
-                    await channel.send(content)
 
-@tasks.loop(time=time(hour=14, minute=0))
+    if not topic:
+        return
+
+    channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
+    if not channel:
+        return
+
+    prompt = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": (
+            f"Сегодня: {today_str}\n"
+            f"Праздник: {topic}.\n"
+            "Напиши одно общее праздничное поздравление для всех участниц сервера "
+            "от лица Астариона. Это групповое обращение. "
+            "Тон харизматичный, немного театральный, с лёгким сарказмом, но без оскорблений."
+        )}
+    ]
+
+    content = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+
+    if content:
+        await channel.send(f"@everyone\n\n{content}")
+
+@tasks.loop(time=time(hour=18, minute=0))
 async def send_birthday_messages():
     await bot.wait_until_ready()
     today_str = datetime.now().strftime("%d-%m")
