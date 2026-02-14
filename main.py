@@ -415,7 +415,20 @@ async def on_message(message):
 
     if reply_ds:
         await message.reply(reply_ds, mention_author=False)
-        
+
+@bot.event
+async def on_ready():
+    print(f"Бот запущен как {bot.user}")
+
+    if not daily_wife_message.is_running():
+        daily_wife_message.start()
+
+    if not send_holiday_messages.is_running():
+        send_holiday_messages.start()
+
+    if not send_birthday_messages.is_running():
+        send_birthday_messages.start()
+
 # ================== ЗАПУСК ==================
 
 bot.run(DISCORD_TOKEN)
