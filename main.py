@@ -191,14 +191,14 @@ if content:
     wife_mention = "<@929347823693070387>"
     await channel.send(f"{wife_mention} {affectionate_name}, {content}")
 
-@tasks.loop(time=time(hour=20, minute=0))
+@tasks.loop(time=time(hour=16, minute=0))
 async def daily_wife_message():
     await bot.wait_until_ready()
     weekday = datetime.now().weekday()
     topic = "приглашение в ресторан" if weekday == 6 else "как прошёл день, общение, новости, маленькие подарки"
     await send_wife_message(topic)
 
-@tasks.loop(time=time(hour=14, minute=0))
+@tasks.loop(time=time(hour=13, minute=0))
 async def send_holiday_messages():
     await bot.wait_until_ready()
     today_str = datetime.now().strftime("%d-%m")
@@ -227,7 +227,7 @@ async def send_holiday_messages():
     if content:
         await channel.send(f"@everyone\n\n{content}")
 
-@tasks.loop(time=time(hour=18, minute=0))
+@tasks.loop(time=time(hour=15, minute=0))
 async def send_birthday_messages():
     await bot.wait_until_ready()
     today_str = datetime.now().strftime("%d-%m")
