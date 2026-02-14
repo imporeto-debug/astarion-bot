@@ -174,9 +174,12 @@ users_memory = load_users()
 
 async def send_wife_message(topic: str):
     channel = bot.get_channel(WIFE_CHANNEL_ID)
-    if not channel: return
+    if not channel:
+        return
+
     today_str = datetime.now().strftime("%d-%m-%Y")
     affectionate_name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
+
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": (
@@ -186,10 +189,12 @@ async def send_wife_message(topic: str):
             "Короткое, интересное, индивидуальное."
         )}
     ]
+
     content = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-if content:
-    wife_mention = "<@929347823693070387>"
-    await channel.send(f"{wife_mention} {affectionate_name}, {content}")
+
+    if content:
+        wife_mention = "<@929347823693070387>"
+        await channel.send(f"{wife_mention} {affectionate_name}, {content}")
 
 @tasks.loop(time=time(hour=16, minute=0))
 async def daily_wife_message():
