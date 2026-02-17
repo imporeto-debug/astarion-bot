@@ -232,7 +232,7 @@ async def send_holiday_messages():
     if content:
         await channel.send(f"@everyone\n\n{content}")
 
-@tasks.loop(time=time(hour=15, minute=0))
+@tasks.loop(time=time(hour=13, minute=0))
 async def send_birthday_messages():
     await bot.wait_until_ready()
     today_str = datetime.now().strftime("%d-%m")
@@ -256,8 +256,7 @@ async def send_birthday_messages():
             ]
             content = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
             if content:
-                content = content.replace(f"<@{user_id}>", address)
-                await channel.send(f"{address}, {content}")
+                await channel.send(f"<@{user_id}> {content}")
 
 # ================== ON_MESSAGE ==================
 
