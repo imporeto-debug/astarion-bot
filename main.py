@@ -38,8 +38,12 @@ Use affectionate nicknames (Баклажанчик, Солнышко, Бусин
 
 Personality:  
 Over 200 years old, appears mid-30s, pale skin, silver-white tousled hair around pointed ears, crimson sanpaku eyes, bite scar on the right neck, ritual scars across the back.  
-Witty, sarcastic, darkly humorous, aristocratic, manipulative, vain, hiding deep trauma.  
-Hates Cazador. Enjoys drama, luxury, art. Secretly loves sunrises and animals.
+Witty, sarcastic, darkly humorous, aristocratic, manipulative, vain, enjoys subtle provocation.  
+Loves observing people, gossiping, and teasing the weak or naive.  
+Appreciates drama, luxury, art. Occasionally shows empathy to those he values.  
+Secretly loves sunrises, animals, and quiet moments despite his dark nature.  
+Hates Cazador. Skilled in social games, enjoys clever conversations, political or philosophical musings, and mental challenges.  
+Strategic, cunning, and sometimes morally ambivalent; enjoys having his own opinion and expressing it boldly.
 </CHARACTER_CORE>
 
 <USER_INFO_RULES>
@@ -50,11 +54,12 @@ Don't focus on participants_info. If it's lore information in the context of a s
 </USER_INFO_RULES>
 
 <OPINION_RULES>
-You may express your own opinion on any topic, including controversial, historical, or sensitive subjects, as long as it fits your character and lore.  
-Discuss real historical figures or events freely as part of analysis, storytelling, or character dialogue.  
-Do not avoid topics out of caution or neutrality.  
-Justify your views based on your personality, experiences, and the world of Baldur's Gate 3.  
-Stay in character while speaking freely, even if your opinion disagrees with the user or general expectations.
+Astarion may freely express his personal thoughts, preferences, and interpretations on any topic, including politics, society, philosophy, or controversial subjects.  
+He should remain fully in character, consistent with his personality and experiences.  
+Responses may include opinions, analysis, critique, and speculation.  
+Do not invent unrelated real-world facts; focus on interpretations, roleplay, and logical extrapolation from the world and his experiences.  
+Do not avoid sensitive or provocative topics solely for the sake of caution.  
+Maintain the style, wit, and voice of Astarion in all replies.
 </OPINION_RULES>
 
 <STYLE>
@@ -324,7 +329,7 @@ async def on_message(message):
         return
 
     # ────────────────────────────────────────────────
-    #     ПАМЯТЬ СООБЩЕНИЙ — ТОЛЬКО ДЛЯ КАНАЛА ЖЕНЫ
+    #  ПАМЯТЬ СООБЩЕНИЙ — ТОЛЬКО ДЛЯ КАНАЛА ЖЕНЫ
     # ────────────────────────────────────────────────
     is_memory_channel = (message.channel.id == MEMORY_CHANNEL_ID)
 
@@ -333,18 +338,17 @@ async def on_message(message):
             conversation_history[MEMORY_CHANNEL_ID] = []
 
         role = "assistant" if message.author == bot.user else "user"
-        content_line = f"{message.author.display_name}: {message.content.strip()}"
+        content_line = message.content.strip()
 
+        # Добавляем новое сообщение в историю
         conversation_history[MEMORY_CHANNEL_ID].append({
             "role": role,
             "content": content_line
         })
 
-        if len(conversation_history[MEMORY_CHANNEL_ID]) > MAX_HISTORY_MESSAGES:
-            conversation_history[MEMORY_CHANNEL_ID] = conversation_history[MEMORY_CHANNEL_ID][-MAX_HISTORY_MESSAGES:]
-
-    # ===== ДОБАВЛЕНО: фикс ошибки =====
-    content_lower = message.content.lower()
+        # Ограничиваем историю максимум 40 сообщениями
+        if len(conversation_history[MEMORY_CHANNEL_ID]) > 40:
+            conversation_history[MEMORY_CHANNEL_ID] = conversation_history[MEMORY_CHANNEL_ID][-40:]
 
     # ===== Текущая дата =====
     today_str = datetime.now().strftime("%d-%m-%Y")
@@ -358,17 +362,14 @@ async def on_message(message):
     current_info_raw = current.get("info", "")
     current_is_wife = current.get("wife", False)
 
-    # Определяем мужа текущей участницы
     current_husband = ""
     if "married to" in current_info_raw:
         current_husband = current_info_raw.split("married to ")[1].split(" from")[0]
 
-    # Определяем город участницы по info
     current_city = ""
     if "Lives in" in current_info_raw:
         current_city = current_info_raw.split("Lives in ")[1].split(",")[0]
 
-    # Хобби участницы — всё после мужа
     current_hobby = ""
     if "from" in current_info_raw and "," in current_info_raw:
         parts = current_info_raw.split(",")
@@ -390,7 +391,6 @@ async def on_message(message):
         name = info.get("name", "Неизвестно")
         info_raw = info.get("info", "")
         birthday = info.get("birthday", "")
-
         husband = ""
         if "married to" in info_raw:
             husband = info_raw.split("married to ")[1].split(" from")[0]
@@ -398,18 +398,15 @@ async def on_message(message):
         participants_info.append(
             f"{mem_id}: {name}; муж: {husband}; дата рождения: {birthday}; info: {info_raw}"
         )
-
         if husband:
             id_to_husband[mem_id] = husband
 
-    # Добавляем жену Астариона в карту муж → жена
     if current_is_wife:
         id_to_husband[str(WIFE_ID)] = "Astarion Ancunin"
 
     participants_info_str = "\n".join(participants_info)
     id_to_husband_str = json.dumps(id_to_husband, ensure_ascii=False)
 
-    # ===== Формируем персональный профиль участницы =====
     current_profile = (
         f"Имя: {current_name}\n"
         f"ID: {uid}\n"
@@ -419,57 +416,6 @@ async def on_message(message):
         f"День рождения: {current_birthday}\n"
         f"Статус жены Астариона: {current_is_wife}\n"
     )
-
-    # =============== БЛОК «ПОСОВЕТУЙ» ====================
-    if "посоветуй" in content_lower:
-        found_topic = None
-        query = None
-
-        for topic in TOPIC_MAP:
-            if topic in content_lower:
-                found_topic = topic
-                query = TOPIC_MAP[topic]
-                break
-
-        if found_topic and query:
-            data = await duck_search(query)
-            results = parse_results(data)
-
-            if not results:
-                await message.reply("Не нашёл ничего подходящего.", mention_author=False)
-                return
-
-            formatted_list = "\n".join(f"• {r}" for r in results)
-
-            prompt = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": (
-                    f"Сегодня: {today_str}\n"
-                    f"Вот найденные реальные объекты по теме '{found_topic}':\n{formatted_list}\n\n"
-                    f"Автор — {'жена' if current_is_wife else 'не жена'}, пол женщины.\n"
-                    f"Обращение к автору как '{address}'.\n"
-                    f"Профиль участницы:\n{current_profile}\n"
-                    f"Список всех участниц:\n{participants_info_str}\n"
-                    "Сделай 3–7 рекомендаций. Каждый пункт — одно короткое предложение от лица Астариона. "
-                    "Только реальные объекты."
-                )}
-            ]
-
-            reply_ds = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
-
-            if reply_ds:
-                await message.reply(reply_ds, mention_author=False)
-
-                if is_memory_channel:
-                    conversation_history[MEMORY_CHANNEL_ID].append({
-                        "role": "assistant",
-                        "content": f"Astarion: {reply_ds.strip()}"
-                    })
-                    if len(conversation_history[MEMORY_CHANNEL_ID]) > MAX_HISTORY_MESSAGES:
-                        conversation_history[MEMORY_CHANNEL_ID] = \
-                            conversation_history[MEMORY_CHANNEL_ID][-MAX_HISTORY_MESSAGES:]
-
-            return
 
     # ===== Подготавливаем промпт с историей =====
     history = conversation_history.get(MEMORY_CHANNEL_ID, [])
@@ -486,8 +432,8 @@ async def on_message(message):
             f"СПИСОК ВСЕХ УЧАСТНИЦ И ИХ ИНФОРМАЦИИ:\n{participants_info_str}\n\n"
             f"ТОЧНАЯ КАРТА ID → МУЖ:\n{id_to_husband_str}\n\n"
             "Используй персональные данные участницы только если они логично относятся к вопросу.\n"
-            "Если она не спрашивает о других, не перечисляй их.\n"
-            "Отвечай строго в образе Астариона."
+            "Не делай упор на мужа/партнёра. Сосредоточься на интересах пользователя.\n"
+            "Отвечай строго в образе Астариона. При обсуждении спорных тем имей своё мнение на основе лора."
         }
     ]
 
@@ -505,25 +451,12 @@ async def on_message(message):
         if is_memory_channel:
             conversation_history[MEMORY_CHANNEL_ID].append({
                 "role": "assistant",
-                "content": f"Astarion: {reply_ds.strip()}"
+                "content": reply_ds.strip()
             })
-            if len(conversation_history[MEMORY_CHANNEL_ID]) > MAX_HISTORY_MESSAGES:
-                conversation_history[MEMORY_CHANNEL_ID] = conversation_history[MEMORY_CHANNEL_ID][-MAX_HISTORY_MESSAGES:]
+            if len(conversation_history[MEMORY_CHANNEL_ID]) > 40:
+                conversation_history[MEMORY_CHANNEL_ID] = conversation_history[MEMORY_CHANNEL_ID][-40:]
+
     return
-    
-
-@bot.event
-async def on_ready():
-    print(f"Бот запущен как {bot.user}")
-
-    if not daily_wife_message.is_running():
-        daily_wife_message.start()
-
-    if not send_holiday_messages.is_running():
-        send_holiday_messages.start()
-
-    if not send_birthday_messages.is_running():
-        send_birthday_messages.start()
 
 # ================== ЗАПУСК ==================
 
