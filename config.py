@@ -1,1 +1,2 @@
-
+# config.py
+TMDB_API_KEY = "d3c4d897d20237157e61edd55b188a37"
