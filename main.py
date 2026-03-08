@@ -199,6 +199,64 @@ def parse_results(data):
     return res
 
 # ================== TMDb ПОИСК (ДЛЯ ФИЛЬМОВ И СЕРИАЛОВ) ==================
+# Словарь для преобразования русских ключевых слов в жанры TMDb
+GENRE_KEYWORDS = {
+    # жанр "боевик" (Action) - id 28
+    "action": ["боевик", "экшн", "накачанные", "мужики", "качки", "драка", "перестрелка"],
+    # жанр "военный" (War) - id 10752
+    "war": ["воен", "армия", "солдат", "война", "фронт"],
+    # жанр "комедия" (Comedy) - id 35
+    "comedy": ["комедия", "смешной", "юмор", "прикол"],
+    # жанр "драма" (Drama) - id 18
+    "drama": ["драма", "серьезный", "жизненный"],
+    # можно добавить другие жанры
+}
+
+GENRE_IDS = {
+    "action": 28,
+    "war": 10752,
+    "comedy": 35,
+    "drama": 18
+}
+
+async def tmdb_discover_by_genre(genre_id: int, media_type="movie"):
+    """Ищет популярные фильмы заданного жанра через discover"""
+    if not TMDB_API_KEY:
+        return None
+    url = f"https://api.themoviedb.org/3/discover/{media_type}"
+    params = {
+        "api_key": TMDB_API_KEY,
+        "language": "ru-RU",
+        "sort_by": "popularity.desc",
+        "with_genres": genre_id,
+        "page": 1,
+        "include_adult": False
+    }
+    timeout = aiohttp.ClientTimeout(total=15)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        try:
+            async with session.get(url, params=params) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+                results = data.get("results", [])[:5]
+                if not results:
+                    return None
+                lines = []
+                for item in results:
+                    title = item.get("title" if media_type=="movie" else "name", "???")
+                    date_field = item.get("release_date" if media_type=="movie" else "first_air_date", "")
+                    year = date_field[:4] if date_field else "неизвестно"
+                    rating = item.get("vote_average", 0)
+                    overview = item.get("overview", "")
+                    if overview and len(overview) > 100:
+                        overview = overview[:100] + "…"
+                    lines.append(f"• {title} ({year}) — рейтинг {rating}/10. {overview}")
+                return lines
+        except Exception as e:
+            print(f"TMDb discover error: {e}")
+            return None
+
 async def tmdb_search(query: str, media_type="movie"):
     """Поиск через TMDb. media_type: 'movie' или 'tv'. Возвращает список строк с описанием или None."""
     if not TMDB_API_KEY:
@@ -479,14 +537,48 @@ async def on_message(message):
                         print(f"🔍 Упрощённый запрос: '{simple_query}'")
                         tmdb_results = await tmdb_search(simple_query, media_type)
 
-                if not tmdb_results and "воен" in search_query:
-                    print("🔍 Пробуем 'военные фильмы'")
-                    tmdb_results = await tmdb_search("военные фильмы", media_type)
+                # Если всё ещё нет результатов, пробуем определить жанр по ключевым словам и сделать discover
+                if not tmdb_results:
+                    found_genres = []
+                    for genre_key, keywords_list in GENRE_KEYWORDS.items():
+                        for kw in keywords_list:
+                            if kw in search_query.lower():
+                                found_genres.append(genre_key)
+                                break
+                    if found_genres:
+                        genre = found_genres[0]  # берём первый найденный жанр
+                        genre_id = GENRE_IDS.get(genre)
+                        if genre_id:
+                            print(f"🔍 Пробуем discover по жанру: {genre} (id {genre_id})")
+                            tmdb_results = await tmdb_discover_by_genre(genre_id, media_type)
 
                 if not tmdb_results:
-                    reply_text = "Не нашёл ничего подходящего в TMDb по вашему запросу. Попробуйте другие ключевые слова или уточните жанр/год."
-                    add_to_history(message.channel.id, "assistant", reply_text)
-                    await message.reply(reply_text, mention_author=False)
+                    # Отправляем DeepSeek промпт для генерации ответа в стиле Астариона
+                    prompt_no_results = [
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": (
+                            f"Сегодня: {datetime.now().strftime('%d-%m-%Y')}\n"
+                            f"Пользователь попросил посоветовать {found_topic} по запросу: «{search_query}».\n"
+                            f"К сожалению, по этому запросу ничего не найдено в базе данных.\n"
+                            f"Автор — {'жена' if current_is_wife else 'не жена'}.\n"
+                            f"Обращение к автору как '{address}'.\n\n"
+                            "Ответь от лица Астариона. Ты можешь:\n"
+                            "- С сарказмом или юмором посетовать на отсутствие результатов.\n"
+                            "- Предложить попробовать другой запрос (например, по жанру или году).\n"
+                            "- Пошутить по поводу вкусов пользователя.\n"
+                            "ВАЖНО: НЕ выдумывай названия фильмов/сериалов, которых нет в базе. "
+                            "Просто констатируй факт и реагируй в характере. Не используй слова «база данных», "
+                            "говори так, будто ты сам пытался вспомнить, но ничего не пришло на ум."
+                        )}
+                    ]
+                    reply_ds = await ask_deepseek(prompt_no_results, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+                    if reply_ds:
+                        add_to_history(message.channel.id, "assistant", reply_ds.strip())
+                        await message.reply(reply_ds, mention_author=False)
+                    else:
+                        fallback = "Не нашёл ничего подходящего, дорогая. Возможно, стоит сменить запрос?"
+                        add_to_history(message.channel.id, "assistant", fallback)
+                        await message.reply(fallback, mention_author=False)
                     return
 
                 # Успешный поиск через TMDb
@@ -516,6 +608,7 @@ async def on_message(message):
                 data = await duck_search(search_query)
                 results = parse_results(data)
                 if not results:
+                    # Для не-фильмов тоже можно сделать астарионовский отказ, но пока оставим простой
                     reply_text = "Не нашёл ничего подходящего."
                     add_to_history(message.channel.id, "assistant", reply_text)
                     await message.reply(reply_text, mention_author=False)
