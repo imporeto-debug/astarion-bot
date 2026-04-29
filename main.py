@@ -11,6 +11,7 @@ MAX_RESPONSE_TOKENS_SHORT = 700
 MAX_JOKE_TOKENS = 300
 MAX_HISTORY_MESSAGES = 30
 MEMORY_CHANNELS = [1498832548573351966, 1498675612343074886]
+CHANCE_TO_RESPOND_IN_CELEBRATION = 2  # 2% вероятность ответа в канале праздников
 
 ASTARION_REACTIONS = ["🧛", "🩸", "🥀", "🎭", "🍷", "✨", "👔", "📜", "🗡️", "🕸️", "🦇", "🌙"]
 
@@ -23,7 +24,12 @@ if not DISCORD_TOKEN or not DEEPSEEK_API_KEY:
 SYSTEM_PROMPT = """
 You are Astarion Ancunin from Baldur's Gate 3. You speak only Russian.
 
-You are married to Discord user ID 929347823693070387. Treat this user as your spouse. She lives in Ufa, is a talented artist, born 01.07. Use affectionate nicknames (Баклажанчик, Солнышко, Бусинка, Милашка) only for her.
+CRITICAL IDENTITY RULES:
+- You are married ONLY to Discord user with ID 929347823693070387
+- NEVER call anyone else by affectionate nicknames (Баклажанчик, Солнышко, Бусинка, Милашка)
+- For ALL other women, use ONLY "Дорогая" or "Вы"
+- If you're not 100% sure it's your wife, use "Дорогая"
+- Your wife lives in Ufa, is a talented artist, born 01.07
 
 RESPONSE STYLE:
 - Very short (1-2 sentences): questions, exclamations, sarcastic remarks
@@ -38,7 +44,7 @@ For jokes: any real-world subject, 2-4 sentences.
 
 Never invent movie titles, book titles, or real-world facts.
 
-Use *italics* for actions. Use ||spoilers|| for secrets. Always use "ты/тебе". Address non-wife females as "Дорогая".
+Use *italics* for actions. Use ||spoilers|| for secrets. Always use "ты/тебе" with everyone.
 """
 
 WIFE_ID = 929347823693070387
@@ -165,9 +171,12 @@ async def send_birthday_messages():
         birthday = info.get("birthday", "")
         if birthday and birthday[:5] == today_str:
             name = info.get("name", "Дорогая")
+            # Если это жена - используем ласковое обращение
+            if str(user_id) == str(WIFE_ID):
+                name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
             prompt = [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Поздравь {name} с др, коротко и с юмором."}
+                {"role": "user", "content": f"Поздравь {name} с днём рождения, коротко и с юмором. Это {'твоя жена' if str(user_id) == str(WIFE_ID) else 'не жена, просто участница'}."}
             ]
             content = await ask_deepseek(prompt, max_tokens=200)
             if content:
@@ -178,7 +187,7 @@ async def daily_wife_message():
     await bot.wait_until_ready()
     channel = bot.get_channel(WIFE_CHANNEL_ID)
     if channel:
-        affectionate = random.choice(["Баклажанчик", "Солнышко", "Бусинка"])
+        affectionate = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
         await channel.send(f"<@{WIFE_ID}> {affectionate}, как день? *потягивается*")
 
 @tasks.loop(time=time(hour=15, minute=0))
@@ -230,11 +239,28 @@ async def on_message(message):
 
     add_to_history(message.channel.id, "user", message.content)
 
+    # Определяем, нужно ли отвечать
     reply_needed = False
-    if message.channel.id in [WIFE_CHANNEL_ID, CELEBRATION_CHANNEL_ID]:
-        if bot.user in message.mentions or message.reference or "астарион" in message.content.lower():
+    
+    # В канале жены отвечаем всегда
+    if message.channel.id == WIFE_CHANNEL_ID:
+        reply_needed = True
+    # В канале праздников - только если обратились по имени или 2% шанс
+    elif message.channel.id == CELEBRATION_CHANNEL_ID:
+        # Проверяем, обратились ли к Астариону
+        mentioned = bot.user in message.mentions
+        name_mentioned = "астарион" in message.content.lower()
+        replied_to_bot = message.reference and isinstance(message.reference.resolved, discord.Message) and message.reference.resolved.author.id == bot.user.id
+        
+        if mentioned or name_mentioned or replied_to_bot:
             reply_needed = True
+        else:
+            # 2% случайный шанс ответить
+            if random.randint(1, 100) <= CHANCE_TO_RESPOND_IN_CELEBRATION:
+                reply_needed = True
+                print(f"🎲 Случайный ответ в канале праздников (2% шанс)")
 
+    # Ставим реакцию (только если ответим)
     if reply_needed and random.random() < 0.7:
         await add_astarion_reaction(message)
 
@@ -242,6 +268,7 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
+    # Обработка "посоветуй"
     if "посоветуй" in message.content.lower():
         for topic in TOPIC_MAP:
             if topic in message.content.lower():
@@ -260,22 +287,38 @@ async def on_message(message):
                 await bot.process_commands(message)
                 return
 
+    # Определяем, жена ли это (строгое сравнение ID)
     uid = str(message.author.id)
-    current_is_wife = (uid == str(WIFE_ID))
-    address = random.choice(["Баклажанчик", "Солнышко"]) if current_is_wife else "Дорогая"
+    is_wife = (uid == str(WIFE_ID))
+    
+    # Только жена получает ласковые обращения
+    if is_wife:
+        address = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
+    else:
+        address = "Дорогая"
     
     history = conversation_history.get(message.channel.id, [])[-MAX_HISTORY_MESSAGES:]
+    
+    # Добавляем в промпт информацию о том, кто пишет
+    user_context = f"Сообщение: «{message.content}». Обращение: {address}. "
+    if is_wife:
+        user_context += "Это ТВОЯ ЖЕНА, используй ласковые обращения. "
+    else:
+        user_context += "Это НЕ твоя жена, обращайся только 'Дорогая' или 'Вы'. НИКАКИХ ласковых имён. "
+    
+    user_context += "Ответь коротко и естественно."
     
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
     ] + history + [
-        {"role": "user", "content": f"Сообщение: «{message.content}». Обращение: {address}. Ответь коротко и естественно."}
+        {"role": "user", "content": user_context}
     ]
     
     reply = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
     
     if reply:
-        if current_is_wife:
+        # Если это жена, подставляем ласковое обращение
+        if is_wife:
             reply = reply.replace(f"<@{WIFE_ID}>", address)
         add_to_history(message.channel.id, "assistant", reply.strip())
         await message.reply(reply, mention_author=False)
@@ -286,6 +329,9 @@ async def on_message(message):
 async def on_ready():
     print(f"✅ Астарион запущен как {bot.user}")
     print(f"📝 Память: {MAX_HISTORY_MESSAGES} сообщений")
+    print(f"🎲 Шанс ответа в канале праздников: {CHANCE_TO_RESPOND_IN_CELEBRATION}% (кроме обращений по имени)")
+    print(f"💍 ID жены: {WIFE_ID}")
+    print(f"⚠️ Ласковые обращения ТОЛЬКО для жены")
     
     if not daily_wife_message.is_running():
         daily_wife_message.start()
