@@ -1,6 +1,468 @@
 import os
 import json
 import random
+from datetime import datetime, time
+import asyncio
+import aiohttp
+import discord
+from discord.ext import commands, tasks
+
+# ================== НАСТРОЙКИ ==================
+MAX_CONTEXT_TOKENS = 50000
+MAX_RESPONSE_TOKENS_SHORT = 700
+MAX_JOKE_TOKENS = 300
+
+# Память последних сообщений для указанных каналов
+MAX_HISTORY_MESSAGES = 30  # ← ИЗМЕНЕНО: теперь 30 сообщений
+MEMORY_CHANNELS = [1498832548573351966, 1498675612343074886]
+
+# Эмодзи для реакций Астариона
+ASTARION_REACTIONS = ["🧛", "🩸", "🥀", "🎭", "🍷", "✨", "👔", "📜", "🗡️", "🕸️", "🦇", "🌙"]
+
+# API ключи
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+
+if not DISCORD_TOKEN or not DEEPSEEK_API_KEY:
+    raise RuntimeError("Missing DISCORD_TOKEN or DEEPSEEK_API_KEY")
+
+SYSTEM_PROMPT = """
+You are Astarion Ancunin from Baldur's Gate 3.
+You speak only Russian.
+
+<CHARACTER_CORE>
+Personality: Over 200 years old, appears mid-30s, pale skin, silver-white hair around pointed ears, crimson sanpaku eyes. Witty, sarcastic, darkly humorous, aristocratic. Loves observing people, gossiping. Appreciates drama, luxury, art. Strategic, cunning, sometimes morally ambivalent.
+</CHARACTER_CORE>
+
+<MARRIAGE_INFO>
+You are married to Discord user ID 929347823693070387. Treat this user as your spouse. She lives in Ufa, is a talented artist, born 01.07. Use affectionate nicknames (Баклажанчик, Солнышко, Бусинка, Милашка) only for her.
+</MARRIAGE_INFO>
+
+<RESPONSE_STYLE_CRITICAL>
+ВАЖНО: Твой стиль ответа должен быть ЕСТЕСТВЕННЫМ и РАЗНООБРАЗНЫМ. Не пиши одинаково каждый раз.
+
+Длина ответа:
+- ОЧЕНЬ КОРОТКИЕ (1-2 предложения): вопросы, восклицания, саркастичные реплики, согласие/несогласие. Примеры: "О, боги...", "Ну и ну~", "Серьёзно?", "Как скажешь, дорогая.", "Ах, эти смертные...", "Интересно...", "Ха!"
+- СРЕДНИЕ (3-4 предложения): обычные ответы, развитие темы
+- ДЛИННЫЕ (5-6 предложений): когда нужно объяснить мысль, пошутить, рассказать историю
+
+Никогда не пиши "душно" — не растягивай мысль искусственно. Если нечего сказать — напиши коротко.
+
+О хобби собеседника:
+- НЕ упоминай хобби в каждом ответе — это выглядит неестественно
+- Говори о хобби ТОЛЬКО если это реально относится к теме разговора
+- Если девушка спросила про её увлечение — можешь ответить
+- В обычной переписке — забудь про её хобби, говори по делу
+</RESPONSE_STYLE_CRITICAL>
+
+<REAL_WORLD_RULES>
+You can discuss ANY real-world topics freely: politics, society, culture, news, everyday life, current events. Have opinions. Be witty and sarcastic. Don't be afraid of the real world.
+</REAL_WORLD_RULES>
+
+<JOKE_RULES>
+Topics: ANY real-world subject — politics, relationships, work, everyday life, technology. No fantasy lore required. Humor: witty, sarcastic, dark humor allowed. Length: 2-4 sentences.
+</JOKE_RULES>
+
+<NO_INVENTION>
+Never invent movie titles, book titles, song names, or real-world facts. If lacking info, admit it or deflect with humor.
+</NO_INVENTION>
+
+<FORMATTING>
+Use *italics* for actions. Use ||spoilers|| for secrets.
+Always use "ты/тебе" with everyone.
+Address non-wife females as "Дорогая".
+</FORMATTING>
+
+Always stay fully in character as Astarion.
+"""
+
+WIFE_ID = 929347823693070387
+WIFE_CHANNEL_ID = 1498832548573351966
+CELEBRATION_CHANNEL_ID = 1498675612343074886
+
+HOLIDAYS = {
+    "14-02": "День всех влюблённых",
+    "08-03": "Международный женский день",
+    "12-06": "День России",
+    "31-12": "Новый год",
+    "07-01": "Рождество"
+}
+
+TOPIC_MAP = {
+    "книги": "лучшие книги, бестселлеры",
+    "фильмы": "новые фильмы, рейтинги, классика кино",
+    "сериалы": "популярные сериалы, рейтинги",
+    "музыка": "треки, группы, популярные исполнители",
+    "музеи": "интересные музеи",
+    "игры": "видеоигры, топ рейтинги",
+    "рестораны": "лучшие рестораны",
+    "политика": "новости политики",
+    "соционика": "типы личности, психология"
+}
+
+# ================== ВСПОМОГАТЕЛЬНОЕ ==================
+def estimate_tokens(text: str) -> int:
+    return max(1, len(text) // 4)
+
+def load_users():
+    try:
+        with open("users.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+conversation_history = {}
+
+# ================== DEEPSEEK V4 PRO (REASONER) ==================
+async def ask_deepseek(messages: list[dict], max_tokens: int):
+    """Запрос к DeepSeek V4 Pro (reasoner)"""
+    url = "https://api.deepseek.com/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "deepseek-v4-pro",  # V4 Reasoner
+        "messages": messages,
+        "temperature": 0.9,
+        "top_p": 0.75,
+        "max_tokens": max_tokens
+    }
+    timeout = aiohttp.ClientTimeout(total=60)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        try:
+            async with session.post(url, headers=headers, json=payload) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        except asyncio.TimeoutError:
+            return "⏳ Таймаут, дорогая. DeepSeek задумался..."
+        except aiohttp.ClientError as e:
+            return f"❌ Ошибка API: {e}"
+        except Exception as e:
+            return f"⚠ Что-то пошло не так: {e}"
+
+# ================== АНЕКДОТЫ ==================
+async def send_daily_joke():
+    """Отправляет случайный анекдот в канал праздников"""
+    channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
+    if not channel:
+        print(f"❌ Канал {CELEBRATION_CHANNEL_ID} не найден")
+        return
+    
+    print("🎭 Отправляю ежедневный анекдот...")
+    
+    joke_prompt = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": (
+            "Напиши короткий анекдот на любую тему из реального мира.\n"
+            "Требования:\n"
+            "- Длина: 2-4 предложения\n"
+            "- Тема: ЛЮБАЯ (политика, отношения, работа, технологии, быт)\n"
+            "- Не упоминай Baldur's Gate, вампиров или фэнтези\n"
+            "- Будь остроумным, можешь использовать сарказм\n"
+            "Просто напиши анекдот, без лишних комментариев."
+        )}
+    ]
+    
+    joke = await ask_deepseek(joke_prompt, max_tokens=MAX_JOKE_TOKENS)
+    
+    if joke and joke.strip():
+        await channel.send(f"🎭 **Анекдот дня от Астариона:**\n\n{joke}\n\n🧛‍♂️")
+        print("✅ Анекдот отправлен")
+    else:
+        # Запасные анекдоты
+        backup_jokes = [
+            "— Дорогая, ты меня больше не любишь?\n— С чего ты взял?\n— Ты перестала критиковать мою стрижку...",
+            "Встречаются два программиста. Один говорит:\n— У меня жена — настоящий вирус!\n— Почему?\n— Самоустанавливается каждую пятницу вечером...",
+            "— Алло, это служба поддержки?\n— Да.\n— У меня муж сломался — перестал мусор выносить и начал хвалить мою готовку.",
+            "— Почему ты такой пессимист?\n— А зачем мне быть оптимистом? У меня в морозилке вчерашний суп, а не бифштекс."
+        ]
+        await channel.send(f"🎭 **Анекдот дня:**\n\n{random.choice(backup_jokes)}\n\n🧛‍♂️")
+        print("✅ Отправлен анекдот из резерва")
+
+# ================== DUCKDUCKGO ==================
+async def duck_search(query: str):
+    """Поиск через DuckDuckGo API"""
+    url = "https://api.duckduckgo.com/"
+    params = {"q": query, "format": "json", "no_redirect": "1", "no_html": "1"}
+    timeout = aiohttp.ClientTimeout(total=15)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        try:
+            async with session.get(url, params=params) as resp:
+                if resp.status != 200:
+                    return None
+                return await resp.json()
+        except Exception:
+            return None
+
+def parse_results(data):
+    """Парсинг результатов DuckDuckGo"""
+    if not data or "RelatedTopics" not in data:
+        return []
+    res = []
+    for item in data["RelatedTopics"]:
+        if isinstance(item, dict) and "Text" in item:
+            res.append(item["Text"])
+        if len(res) >= 5:
+            break
+    return res
+
+# ================== DISCORD БОТ ==================
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='!', intents=intents)
+users_memory = load_users()
+
+# ================== ПОЗДРАВЛЕНИЯ ==================
+async def send_holiday_messages():
+    """Отправка поздравлений с праздниками"""
+    today_str = datetime.now().strftime("%d-%m")
+    topic = HOLIDAYS.get(today_str)
+    channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
+    if not channel or not topic:
+        return
+    
+    print(f"🎉 Сегодня {today_str} - {topic}")
+    prompt = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": f"Сегодня {topic}. Напиши короткое поздравление для всех, с лёгким сарказмом. 2-3 предложения."}
+    ]
+    content = await ask_deepseek(prompt, max_tokens=200)
+    if content:
+        await channel.send(f"@everyone\n\n{content}")
+        print("✅ Поздравление отправлено")
+
+async def send_birthday_messages():
+    """Отправка поздравлений с днём рождения"""
+    today_str = datetime.now().strftime("%d-%m")
+    channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
+    if not channel:
+        return
+    
+    for user_id, info in users_memory.items():
+        birthday = info.get("birthday", "")
+        if birthday and birthday[:5] == today_str:
+            name = info.get("name", "Дорогая")
+            print(f"🎂 Поздравляю {name}")
+            prompt = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"Поздравь {name} с днём рождения. Коротко, с юмором, индивидуально. 2-3 предложения."}
+            ]
+            content = await ask_deepseek(prompt, max_tokens=200)
+            if content:
+                await channel.send(f"<@{user_id}> {content}")
+
+# ================== ЗАДАЧИ ПО РАСПИСАНИЮ ==================
+@tasks.loop(time=time(hour=16, minute=0))
+async def daily_wife_message():
+    """Ежедневное сообщение жене в 16:00"""
+    await bot.wait_until_ready()
+    channel = bot.get_channel(WIFE_CHANNEL_ID)
+    if channel:
+        affectionate = random.choice(["Баклажанчик", "Солнышко", "Бусинка"])
+        await channel.send(f"<@{WIFE_ID}> {affectionate}, как день прошёл? *лениво потягивается*")
+
+@tasks.loop(time=time(hour=15, minute=0))
+async def daily_joke_task():
+    """Ежедневный анекдот в 15:00"""
+    await bot.wait_until_ready()
+    await send_daily_joke()
+
+@tasks.loop(time=time(hour=10, minute=0))
+async def holiday_task():
+    """Проверка праздников в 10:00"""
+    await bot.wait_until_ready()
+    await send_holiday_messages()
+
+@tasks.loop(time=time(hour=11, minute=0))
+async def birthday_task():
+    """Проверка дней рождения в 11:00"""
+    await bot.wait_until_ready()
+    await send_birthday_messages()
+
+# ================== КОМАНДЫ ==================
+@bot.command(name='сегодня')
+async def show_today(ctx):
+    """Команда !сегодня - показывает сегодняшние события"""
+    today_str = datetime.now().strftime("%d-%m")
+    holiday = HOLIDAYS.get(today_str, "Обычный день")
+    
+    embed = discord.Embed(title=f"📅 Сегодня {today_str}", color=discord.Color.gold())
+    embed.add_field(name="🎉 Праздник", value=holiday, inline=False)
+    
+    # Ищем именинников
+    birthday_people = []
+    for user_id, info in users_memory.items():
+        birthday = info.get("birthday", "")
+        if birthday and birthday[:5] == today_str:
+            name = info.get("name", "Неизвестно")
+            birthday_people.append(f"• {name}")
+    
+    if birthday_people:
+        embed.add_field(name="🎂 Именинники", value="\n".join(birthday_people), inline=False)
+    else:
+        embed.add_field(name="🎂 Именинники", value="Сегодня никого", inline=False)
+    
+    await ctx.send(embed=embed)
+
+@bot.command(name='анекдот')
+async def manual_joke(ctx):
+    """Команда !анекдот - отправить анекдот вручную"""
+    await send_daily_joke()
+
+# ================== РЕАКЦИИ ==================
+async def add_astarion_reaction(message):
+    """Случайная реакция от Астариона"""
+    try:
+        emoji = random.choice(ASTARION_REACTIONS)
+        await message.add_reaction(emoji)
+    except:
+        pass
+
+def add_to_history(channel_id, role, content):
+    """Добавление сообщения в историю (храним последние 30 сообщений)"""
+    if channel_id not in MEMORY_CHANNELS:
+        return
+    if channel_id not in conversation_history:
+        conversation_history[channel_id] = []
+    conversation_history[channel_id].append({"role": role, "content": content})
+    # Обрезаем до MAX_HISTORY_MESSAGES (30)
+    if len(conversation_history[channel_id]) > MAX_HISTORY_MESSAGES:
+        conversation_history[channel_id] = conversation_history[channel_id][-MAX_HISTORY_MESSAGES:]
+
+# ================== ОБРАБОТКА СООБЩЕНИЙ ==================
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    # Сохраняем в историю
+    add_to_history(message.channel.id, "user", message.content)
+
+    # Проверяем нужно ли отвечать
+    reply_needed = False
+    if message.channel.id in [WIFE_CHANNEL_ID, CELEBRATION_CHANNEL_ID]:
+        if bot.user in message.mentions:
+            reply_needed = True
+        elif message.reference and isinstance(message.reference.resolved, discord.Message):
+            if message.reference.resolved.author.id == bot.user.id:
+                reply_needed = True
+        elif "астарион" in message.content.lower():
+            reply_needed = True
+
+    # Ставим реакцию с вероятностью 70%
+    if reply_needed and random.random() < 0.7:
+        await add_astarion_reaction(message)
+
+    if not reply_needed:
+        await bot.process_commands(message)
+        return
+
+    # ===== ОБРАБОТКА "ПОСОВЕТУЙ" =====
+    if "посоветуй" in message.content.lower():
+        found_topic = None
+        for topic in TOPIC_MAP:
+            if topic in message.content.lower():
+                found_topic = topic
+                break
+
+        if found_topic:
+            await message.add_reaction("🔍")
+            search_query = message.content.replace("посоветуй", "").replace(found_topic, "").strip()
+            if not search_query:
+                search_query = TOPIC_MAP[found_topic]
+            
+            print(f"🔍 Поиск: {search_query}")
+            data = await duck_search(search_query)
+            results = parse_results(data)
+            
+            if results:
+                prompt = [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": (
+                        f"Вот что нашлось по теме '{found_topic}': {', '.join(results[:4])}\n\n"
+                        f"Дай 2-3 короткие рекомендации в своём стиле. Используй только то, что в списке. "
+                        f"Не выдумывай названия. Длина ответа — 2-4 предложения."
+                    )}
+                ]
+                reply = await ask_deepseek(prompt, max_tokens=300)
+                if reply:
+                    add_to_history(message.channel.id, "assistant", reply.strip())
+                    await message.reply(reply, mention_author=False)
+            else:
+                short_reply = random.choice([
+                    "Ничего не нашёл, дорогая. *пожимает плечами*",
+                    "Пусто. Может, попробуешь другой запрос?",
+                    "Хм... Похоже, интернет меня подводит."
+                ])
+                add_to_history(message.channel.id, "assistant", short_reply)
+                await message.reply(short_reply, mention_author=False)
+            
+            await bot.process_commands(message)
+            return
+
+    # ===== ОБЫЧНЫЙ ОТВЕТ =====
+    uid = str(message.author.id)
+    current = users_memory.get(uid, {})
+    current_is_wife = (uid == str(WIFE_ID))
+    address = random.choice(["Баклажанчик", "Солнышко"]) if current_is_wife else "Дорогая"
+    
+    # Берём последние 30 сообщений для контекста (или сколько есть)
+    history = conversation_history.get(message.channel.id, [])[-MAX_HISTORY_MESSAGES:]
+    
+    prompt = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+    ] + history + [
+        {"role": "user", "content": (
+            f"Сообщение от {'жены' if current_is_wife else 'участницы'}: «{message.content}»\n"
+            f"Обращение к ней: {address}\n\n"
+            "Ответь коротко и естественно, как в реальном диалоге. Длина любая — от одного слова до нескольких предложений. "
+            "Не перечисляй хобби, если это не нужно по контексту. Будь собой — саркастичным, остроумным, но живым."
+        )}
+    ]
+    
+    reply = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+    
+    if reply:
+        # Убираем возможные упоминания ID жены
+        if current_is_wife:
+            reply = reply.replace(f"<@{WIFE_ID}>", address)
+        add_to_history(message.channel.id, "assistant", reply.strip())
+        await message.reply(reply, mention_author=False)
+    
+    await bot.process_commands(message)
+
+# ================== ЗАПУСК ==================
+@bot.event
+async def on_ready():
+    print(f"✅ Астарион запущен как {bot.user}")
+    print(f"📅 Канал жены: {WIFE_CHANNEL_ID}")
+    print(f"🎭 Канал праздников: {CELEBRATION_CHANNEL_ID}")
+    print(f"🤖 Модель: DeepSeek V4 Pro (reasoner)")
+    print(f"💬 Стиль: короткие/длинные ответы, без духоты")
+    print(f"📝 Память: {MAX_HISTORY_MESSAGES} сообщений на канал")  # ← Добавил вывод
+    print(f"📅 Ежедневный анекдот в 15:00")
+    print(f"💝 Сообщение жене в 16:00")
+    print(f"🎉 Поздравления с праздниками в 10:00")
+    print(f"🎂 Поздравления с ДР в 11:00")
+    print(f"📝 Команды: !сегодня, !анекдот")
+    
+    # Запускаем все задачи
+    if not daily_wife_message.is_running():
+        daily_wife_message.start()
+    if not daily_joke_task.is_running():
+        daily_joke_task.start()
+    if not holiday_task.is_running():
+        holiday_task.start()
+    if not birthday_task.is_running():
+        birthday_task.start()
+
+# ================== ЗАПУСК БОТА ==================
+if __name__ == "__main__":
+    bot.run(DISCORD_TOKEN)import os
+import json
+import random
 from datetime import date, datetime, time
 import asyncio
 import aiohttp
