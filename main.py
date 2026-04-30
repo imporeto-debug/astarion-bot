@@ -11,7 +11,8 @@ MAX_RESPONSE_TOKENS_SHORT = 700
 MAX_JOKE_TOKENS = 300
 MAX_HISTORY_MESSAGES = 30
 MEMORY_CHANNELS = [1498832548573351966, 1498675612343074886]
-CHANCE_TO_RESPOND_IN_CELEBRATION = 2  # 2% вероятность ответа в канале праздников
+CHANCE_TO_RESPOND_IN_CELEBRATION = 2
+EMOJI_REFRESH_HOURS = 168  # раз в неделю
 
 ASTARION_REACTIONS = ["🧛", "🩸", "🥀", "🎭", "🍷", "✨", "👔", "📜", "🗡️", "🕸️", "🦇", "🌙"]
 
@@ -50,6 +51,7 @@ Use *italics* for actions. Use ||spoilers|| for secrets. Always use "ты/теб
 WIFE_ID = 929347823693070387
 WIFE_CHANNEL_ID = 1498832548573351966
 CELEBRATION_CHANNEL_ID = 1498675612343074886
+GUILD_ID_FOR_EMOJIS = 1498663459355754526
 
 HOLIDAYS = {
     "14-02": "День всех влюблённых",
@@ -171,7 +173,6 @@ async def send_birthday_messages():
         birthday = info.get("birthday", "")
         if birthday and birthday[:5] == today_str:
             name = info.get("name", "Дорогая")
-            # Если это жена - используем ласковое обращение
             if str(user_id) == str(WIFE_ID):
                 name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
             prompt = [
@@ -205,6 +206,18 @@ async def birthday_task():
     await bot.wait_until_ready()
     await send_birthday_messages()
 
+@tasks.loop(hours=EMOJI_REFRESH_HOURS)
+async def refresh_emojis_task():
+    """Обновление списка кастомных эмодзи раз в неделю"""
+    await bot.wait_until_ready()
+    guild = bot.get_guild(GUILD_ID_FOR_EMOJIS)
+    if guild:
+        await guild.fetch_emojis()
+        bot.server_emojis = guild.emojis
+        print(f"🔄 Еженедельное обновление эмодзи: загружено {len(bot.server_emojis)} эмодзи с сервера {guild.name}")
+    else:
+        print(f"⚠️ Сервер с ID {GUILD_ID_FOR_EMOJIS} не найден при обновлении эмодзи.")
+
 @bot.command(name='сегодня')
 async def show_today(ctx):
     today_str = datetime.now().strftime("%d-%m")
@@ -216,6 +229,17 @@ async def show_today(ctx):
 @bot.command(name='анекдот')
 async def manual_joke(ctx):
     await send_daily_joke()
+
+@bot.command(name='обновить_эмодзи')
+async def manual_refresh_emojis(ctx):
+    """Ручное обновление списка кастомных эмодзи"""
+    guild = bot.get_guild(GUILD_ID_FOR_EMOJIS)
+    if not guild:
+        await ctx.send("❌ Сервер с эмодзи не найден.")
+        return
+    await guild.fetch_emojis()
+    bot.server_emojis = guild.emojis
+    await ctx.send(f"✅ Обновлено! Загружено {len(bot.server_emojis)} эмодзи.")
 
 async def add_astarion_reaction(message):
     try:
@@ -239,15 +263,11 @@ async def on_message(message):
 
     add_to_history(message.channel.id, "user", message.content)
 
-    # Определяем, нужно ли отвечать
     reply_needed = False
     
-    # В канале жены отвечаем всегда
     if message.channel.id == WIFE_CHANNEL_ID:
         reply_needed = True
-    # В канале праздников - только если обратились по имени или 2% шанс
     elif message.channel.id == CELEBRATION_CHANNEL_ID:
-        # Проверяем, обратились ли к Астариону
         mentioned = bot.user in message.mentions
         name_mentioned = "астарион" in message.content.lower()
         replied_to_bot = message.reference and isinstance(message.reference.resolved, discord.Message) and message.reference.resolved.author.id == bot.user.id
@@ -255,12 +275,10 @@ async def on_message(message):
         if mentioned or name_mentioned or replied_to_bot:
             reply_needed = True
         else:
-            # 2% случайный шанс ответить
             if random.randint(1, 100) <= CHANCE_TO_RESPOND_IN_CELEBRATION:
                 reply_needed = True
                 print(f"🎲 Случайный ответ в канале праздников (2% шанс)")
 
-    # Ставим реакцию (только если ответим)
     if reply_needed and random.random() < 0.7:
         await add_astarion_reaction(message)
 
@@ -268,7 +286,6 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
-    # Обработка "посоветуй"
     if "посоветуй" in message.content.lower():
         for topic in TOPIC_MAP:
             if topic in message.content.lower():
@@ -287,11 +304,9 @@ async def on_message(message):
                 await bot.process_commands(message)
                 return
 
-    # Определяем, жена ли это (строгое сравнение ID)
     uid = str(message.author.id)
     is_wife = (uid == str(WIFE_ID))
     
-    # Только жена получает ласковые обращения
     if is_wife:
         address = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
     else:
@@ -299,14 +314,19 @@ async def on_message(message):
     
     history = conversation_history.get(message.channel.id, [])[-MAX_HISTORY_MESSAGES:]
     
-    # Добавляем в промпт информацию о том, кто пишет
     user_context = f"Сообщение: «{message.content}». Обращение: {address}. "
     if is_wife:
         user_context += "Это ТВОЯ ЖЕНА, используй ласковые обращения. "
     else:
         user_context += "Это НЕ твоя жена, обращайся только 'Дорогая' или 'Вы'. НИКАКИХ ласковых имён. "
     
-    user_context += "Ответь коротко и естественно."
+    if hasattr(bot, 'server_emojis') and bot.server_emojis:
+        emojis_list = [str(e) for e in bot.server_emojis[:50]]
+        user_context += f"\n\nНа этом сервере есть такие эмодзи: {', '.join(emojis_list)}. Ты МОЖЕШЬ ИНОГДА (не в каждом ответе) добавить в конец ответа ОДИН из этих эмодзи, подходящий по смыслу. Не используй стандартные смайлики. Если добавляешь - только один, и только в конец."
+    else:
+        user_context += "\n\n(Кастомные эмодзи недоступны, используй стандартные, но лучше без них.)"
+    
+    user_context += " Ответь коротко и естественно."
     
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -317,7 +337,6 @@ async def on_message(message):
     reply = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
     
     if reply:
-        # Если это жена, подставляем ласковое обращение
         if is_wife:
             reply = reply.replace(f"<@{WIFE_ID}>", address)
         add_to_history(message.channel.id, "assistant", reply.strip())
@@ -333,6 +352,17 @@ async def on_ready():
     print(f"💍 ID жены: {WIFE_ID}")
     print(f"⚠️ Ласковые обращения ТОЛЬКО для жены")
     
+    guild = bot.get_guild(GUILD_ID_FOR_EMOJIS)
+    if guild:
+        await guild.fetch_emojis()
+        bot.server_emojis = guild.emojis
+        print(f"📦 Загружено {len(bot.server_emojis)} кастомных эмодзи с сервера {guild.name}")
+        if bot.server_emojis:
+            print(f"   Пример: {random.choice(bot.server_emojis)}")
+    else:
+        bot.server_emojis = []
+        print(f"⚠️ Сервер с ID {GUILD_ID_FOR_EMOJIS} не найден. Кастомные эмодзи не будут использоваться.")
+    
     if not daily_wife_message.is_running():
         daily_wife_message.start()
     if not daily_joke_task.is_running():
@@ -341,6 +371,8 @@ async def on_ready():
         holiday_task.start()
     if not birthday_task.is_running():
         birthday_task.start()
+    if not refresh_emojis_task.is_running():
+        refresh_emojis_task.start()
 
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
