@@ -306,9 +306,15 @@ async def on_message(message):
                     ]
                     reply = await ask_deepseek(prompt, max_tokens=300)
                     if reply:
-                        await message.reply(reply, mention_author=False)
+                        try:
+                            await message.reply(reply, mention_author=False)
+                        except discord.errors.HTTPException:
+                            await message.channel.send(reply)
                 else:
-                    await message.reply("Ничего не нашёл, дорогая.", mention_author=False)
+                    try:
+                        await message.reply("Ничего не нашёл, дорогая.", mention_author=False)
+                    except discord.errors.HTTPException:
+                        await message.channel.send("Ничего не нашёл, дорогая.")
                 await bot.process_commands(message)
                 return
 
@@ -346,7 +352,10 @@ async def on_message(message):
         if is_wife:
             reply = reply.replace(f"<@{WIFE_ID}>", address)
         add_to_history(message.channel.id, "assistant", reply.strip())
-        await message.reply(reply, mention_author=False)
+        try:
+            await message.reply(reply, mention_author=False)
+        except discord.errors.HTTPException:
+            await message.channel.send(reply)
     
     await bot.process_commands(message)
 
@@ -354,6 +363,10 @@ async def on_message(message):
 async def on_ready():
     print(f"✅ Астарион запущен как {bot.user}")
     print(f"🎲 Шанс ответа в праздниках: {CHANCE_TO_RESPOND_IN_CELEBRATION}%")
+    
+    # Синхронизация слеш-команд (удаляет старые типа attention_chance)
+    await bot.tree.sync()
+    print("✅ Слеш-команды синхронизированы")
     
     guild = bot.get_guild(GUILD_ID_FOR_EMOJIS)
     if guild:
