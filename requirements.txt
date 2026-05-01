@@ -1,5 +1,4 @@
 discord.py==2.4.0
 aiohttp==3.11.11
-Pillow==10.4.0
 requests 
 duckduckgo_search
