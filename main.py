@@ -6,7 +6,6 @@ import asyncio
 import aiohttp
 import discord
 from discord.ext import commands, tasks
-import base64
 
 MAX_RESPONSE_TOKENS_SHORT = 700
 MAX_JOKE_TOKENS = 300
@@ -93,57 +92,31 @@ def load_users():
 
 conversation_history = {}
 
-async def process_image_base64(attachment):
-    """Скачивает изображение и возвращает base64 строку data:image/...;base64,..."""
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(attachment.url) as resp:
-                if resp.status == 200:
-                    img_data = await resp.read()
-                    content_type = resp.headers.get('content-type', 'image/jpeg')
-                    b64 = base64.b64encode(img_data).decode('utf-8')
-                    return f"data:{content_type};base64,{b64}"
-    except Exception as e:
-        print(f"Ошибка загрузки изображения: {e}")
-    return None
-
-async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float = 0.9, image_base64: str = None):
+async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float = 0.9):
     url = "https://api.deepseek.com/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
     }
-    
-    # Копируем сообщения, чтобы не модифицировать оригинал (историю)
-    processed_messages = [msg.copy() for msg in messages]
-    
-    if image_base64 and processed_messages and processed_messages[-1]["role"] == "user":
-        original_text = processed_messages[-1]["content"]
-        processed_messages[-1]["content"] = [
-            {"type": "text", "text": original_text},
-            {"type": "image_url", "image_url": {"url": image_base64}}
-        ]
-    
     payload = {
         "model": "deepseek-v4-pro",
-        "messages": processed_messages,
+        "messages": messages,
         "temperature": temperature,
         "top_p": 0.75,
         "max_tokens": max_tokens
     }
-    
-    timeout = aiohttp.ClientTimeout(total=120)
+    timeout = aiohttp.ClientTimeout(total=60)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         try:
             async with session.post(url, headers=headers, json=payload) as resp:
                 if resp.status != 200:
                     error_text = await resp.text()
-                    print(f"DeepSeek ошибка {resp.status}: {error_text[:500]}")
+                    print(f"DeepSeek ошибка {resp.status}: {error_text[:200]}")
                     return f"❌ Ошибка API: {resp.status}"
                 data = await resp.json()
                 return data.get("choices", [{}])[0].get("message", {}).get("content", "")
         except asyncio.TimeoutError:
-            return "⏳ Таймаут при обработке изображения..."
+            return "⏳ Таймаут..."
         except Exception as e:
             return f"❌ Ошибка: {e}"
 
@@ -155,13 +128,13 @@ async def send_daily_joke():
     print(f"🎲 Анекдот на тему: {theme}")
     joke_prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Напиши короткий анекдот на тему '{theme}'. 2-4 предложения. Будь оригинальным. Без лишних комментариев."}
+        {"role": "user", "content": f"Напиши короткий анекдот на тему '{theme}'. 2-4 предложения. Будь оригинальным."}
     ]
     joke = await ask_deepseek(joke_prompt, max_tokens=MAX_JOKE_TOKENS, temperature=1.1)
     if joke and len(joke.strip()) > 15 and not joke.startswith("❌"):
         await channel.send(f"🎭 **Анекдот дня от Астариона:**\n\n{joke}\n\n🧛‍♂️")
     else:
-        await channel.send("🎭 Сегодня без анекдота… DeepSeek задумался слишком сильно. Попробуй !анекдот позже.")
+        await channel.send("🎭 Сегодня без анекдота… Попробуй !анекдот позже.")
 
 async def duck_search(query: str):
     url = "https://api.duckduckgo.com/"
@@ -254,9 +227,9 @@ async def refresh_emojis_task():
     if guild:
         await guild.fetch_emojis()
         bot.server_emojis = guild.emojis
-        print(f"🔄 Обновление эмодзи: загружено {len(bot.server_emojis)} эмодзи")
+        print(f"🔄 Обновлено {len(bot.server_emojis)} эмодзи")
     else:
-        print(f"⚠️ Сервер с ID {GUILD_ID_FOR_EMOJIS} не найден")
+        print(f"⚠️ Сервер эмодзи не найден")
 
 @bot.command(name='сегодня')
 async def show_today(ctx):
@@ -288,9 +261,9 @@ async def set_chance(ctx, value: int = None):
         return
     if 0 <= value <= 100:
         response_chance = value
-        await ctx.send(f"✅ Шанс ответа установлен на **{response_chance}%**")
+        await ctx.send(f"✅ Шанс ответа = **{response_chance}%**")
     else:
-        await ctx.send("❌ Шанс должен быть от 0 до 100.")
+        await ctx.send("❌ Шанс от 0 до 100.")
 
 async def add_astarion_reaction(message):
     try:
@@ -327,16 +300,6 @@ async def on_message(message):
         return
 
     add_to_history(message.channel.id, "user", message.content)
-
-    # Обработка изображений
-    image_base64 = None
-    if message.attachments:
-        for attach in message.attachments:
-            if attach.content_type and attach.content_type.startswith('image/'):
-                image_base64 = await process_image_base64(attach)
-                if image_base64:
-                    print(f"🖼️ Изображение загружено: {attach.filename}")
-                    break
 
     reply_needed = False
     if message.channel.id == WIFE_CHANNEL_ID:
@@ -385,10 +348,7 @@ async def on_message(message):
 
     uid = str(message.author.id)
     is_wife = (uid == str(WIFE_ID))
-    if is_wife:
-        address = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
-    else:
-        address = "Дорогая"
+    address = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"]) if is_wife else "Дорогая"
 
     author_info = users_memory.get(uid, {})
     author_name = author_info.get("name", "Неизвестная участница")
@@ -406,15 +366,11 @@ async def on_message(message):
         if len(parts) >= 3:
             author_hobby = ", ".join(parts[2:]).strip()
 
-    personal_info = f"Информация об авторе:\nИмя: {author_name}\nЭто {'моя жена' if is_wife else 'не моя жена'}"
-    if author_husband:
-        personal_info += f"\nМуж: {author_husband}"
-    if author_city:
-        personal_info += f"\nГород: {author_city}"
-    if author_hobby:
-        personal_info += f"\nХобби/характеристики: {author_hobby}"
-    if author_birthday:
-        personal_info += f"\nДень рождения: {author_birthday}"
+    personal_info = f"Имя: {author_name}\nЭто {'моя жена' if is_wife else 'не моя жена'}"
+    if author_husband: personal_info += f"\nМуж: {author_husband}"
+    if author_city: personal_info += f"\nГород: {author_city}"
+    if author_hobby: personal_info += f"\nХобби: {author_hobby}"
+    if author_birthday: personal_info += f"\nДень рождения: {author_birthday}"
 
     spouses_list = get_spouse_list()
     spouses_text = "\nИзвестные пары:\n" + "\n".join(spouses_list) if spouses_list else ""
@@ -424,18 +380,11 @@ async def on_message(message):
     user_context = f"Сообщение: «{message.content}». Обращение: {address}.\n{personal_info}\n{spouses_text}\n"
     if hasattr(bot, 'server_emojis') and bot.server_emojis:
         emojis_list = [str(e) for e in bot.server_emojis[:50]]
-        user_context += f"\nДоступные эмодзи: {', '.join(emojis_list)}. Можешь ИНОГДА добавить ОДИН в конец."
-    user_context += "\nОтветь коротко и естественно, обращаясь только к этому человеку."
-    if image_base64:
-        user_context += " К сообщению приложено изображение. Опиши его или прокомментируй."
+        user_context += f"\nДоступные эмодзи: {', '.join(emojis_list)}. Можешь ИНОГДА добавить один в конец."
+    user_context += "\nОтветь коротко и естественно."
 
-    prompt = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-    ] + history + [
-        {"role": "user", "content": user_context}
-    ]
-
-    reply = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT, image_base64=image_base64)
+    prompt = [{"role": "system", "content": SYSTEM_PROMPT}] + history + [{"role": "user", "content": user_context}]
+    reply = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
 
     if reply and not reply.startswith("❌"):
         if is_wife:
@@ -445,8 +394,6 @@ async def on_message(message):
             await message.reply(reply, mention_author=False)
         except:
             await message.channel.send(reply)
-    elif reply and reply.startswith("❌"):
-        await message.channel.send(reply)
 
     await bot.process_commands(message)
 
@@ -454,13 +401,8 @@ async def on_message(message):
 async def on_ready():
     global response_chance
     print(f"✅ Астарион запущен как {bot.user}")
-    print(f"🎲 Шанс ответа в праздниках: {response_chance}% (команда !шанс)")
-    if response_chance == 0:
-        print("⚠️ Установите шанс командой !шанс 5")
-
+    print(f"🎲 Шанс ответа: {response_chance}% (команда !шанс)")
     await bot.tree.sync()
-    print("✅ Слеш-команды синхронизированы")
-
     guild = bot.get_guild(GUILD_ID_FOR_EMOJIS)
     if guild:
         await guild.fetch_emojis()
@@ -468,18 +410,10 @@ async def on_ready():
         print(f"📦 Загружено {len(bot.server_emojis)} эмодзи")
     else:
         bot.server_emojis = []
-        print(f"⚠️ Сервер эмодзи не найден")
 
-    if not daily_wife_message.is_running():
-        daily_wife_message.start()
-    if not daily_joke_task.is_running():
-        daily_joke_task.start()
-    if not holiday_task.is_running():
-        holiday_task.start()
-    if not birthday_task.is_running():
-        birthday_task.start()
-    if not refresh_emojis_task.is_running():
-        refresh_emojis_task.start()
+    for task in [daily_wife_message, daily_joke_task, holiday_task, birthday_task, refresh_emojis_task]:
+        if not task.is_running():
+            task.start()
 
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
