@@ -6,12 +6,14 @@ import asyncio
 import aiohttp
 import discord
 from discord.ext import commands, tasks
+import base64
+from io import BytesIO
 
 MAX_RESPONSE_TOKENS_SHORT = 700
 MAX_JOKE_TOKENS = 300
 MAX_HISTORY_MESSAGES = 30
 MEMORY_CHANNELS = [1498832548573351966, 1498675612343074886]
-CHANCE_TO_RESPOND_IN_CELEBRATION = 2
+response_chance = 0  # по умолчанию 0%, меняется командой !шанс
 EMOJI_REFRESH_HOURS = 168
 
 ASTARION_REACTIONS = ["🧛", "🩸", "🥀", "🎭", "🍷", "✨", "👔", "📜", "🗡️", "🕸️", "🦇", "🌙"]
@@ -51,7 +53,7 @@ FANFICTION_CONTEXT:
 EMOJI RULES:
 - You MAY occasionally add ONE custom emoji from the available list to the end of your response
 
-For jokes: any real-world subject, 2-4 sentences.
+For jokes: any real-world subject, 2-4 sentences. Каждый раз придумывай новый, не повторяйся.
 
 Never invent movie titles, book titles, or real-world facts.
 
@@ -78,6 +80,11 @@ TOPIC_MAP = {
     "музыка": "треки, группы",
 }
 
+JOKE_THEMES = [
+    "политика", "отношения", "работа", "технологии", "еда",
+    "животные", "интернет", "путешествия", "спорт", "телевидение"
+]
+
 def load_users():
     try:
         with open("users.json", "r", encoding="utf-8") as f:
@@ -87,20 +94,46 @@ def load_users():
 
 conversation_history = {}
 
-async def ask_deepseek(messages: list[dict], max_tokens: int):
+async def process_image_attachment(attachment):
+    """Скачивает изображение из вложения и возвращает base64 строку для DeepSeek"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(attachment.url) as resp:
+                if resp.status == 200:
+                    img_data = await resp.read()
+                    # Определим MIME тип
+                    content_type = resp.headers.get('content-type', 'image/png')
+                    # Конвертируем в base64
+                    b64 = base64.b64encode(img_data).decode('utf-8')
+                    return f"data:{content_type};base64,{b64}"
+    except Exception as e:
+        print(f"Ошибка загрузки изображения: {e}")
+        return None
+    return None
+
+async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float = 0.9, image_base64: str = None):
     url = "https://api.deepseek.com/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
     }
+    
+    # Если есть изображение, преобразуем последнее сообщение пользователя в мультимодальный формат
+    if image_base64 and messages and messages[-1]["role"] == "user":
+        original_text = messages[-1]["content"]
+        messages[-1]["content"] = [
+            {"type": "text", "text": original_text},
+            {"type": "image_url", "image_url": {"url": image_base64}}
+        ]
+    
     payload = {
         "model": "deepseek-v4-pro",
         "messages": messages,
-        "temperature": 0.9,
+        "temperature": temperature,
         "top_p": 0.75,
         "max_tokens": max_tokens
     }
-    timeout = aiohttp.ClientTimeout(total=60)
+    timeout = aiohttp.ClientTimeout(total=120)  # увеличен таймаут для картинок
     async with aiohttp.ClientSession(timeout=timeout) as session:
         try:
             async with session.post(url, headers=headers, json=payload) as resp:
@@ -108,7 +141,7 @@ async def ask_deepseek(messages: list[dict], max_tokens: int):
                 data = await resp.json()
                 return data.get("choices", [{}])[0].get("message", {}).get("content", "")
         except asyncio.TimeoutError:
-            return "⏳ Таймаут..."
+            return "⏳ Таймаут при обработке изображения..."
         except Exception as e:
             return f"❌ Ошибка: {e}"
 
@@ -116,19 +149,17 @@ async def send_daily_joke():
     channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
     if not channel:
         return
-    
+    theme = random.choice(JOKE_THEMES)
+    print(f"🎲 Анекдот на тему: {theme}")
     joke_prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": "Напиши короткий анекдот на тему из реального мира. 2-4 предложения. Без лишних комментариев."}
+        {"role": "user", "content": f"Напиши короткий анекдот на тему '{theme}'. 2-4 предложения. Будь оригинальным. Без лишних комментариев."}
     ]
-    
-    joke = await ask_deepseek(joke_prompt, max_tokens=MAX_JOKE_TOKENS)
-    
-    if joke and joke.strip():
+    joke = await ask_deepseek(joke_prompt, max_tokens=MAX_JOKE_TOKENS, temperature=1.1)
+    if joke and len(joke.strip()) > 15:
         await channel.send(f"🎭 **Анекдот дня от Астариона:**\n\n{joke}\n\n🧛‍♂️")
     else:
-        backup = "— Дорогая, ты меня больше не любишь?\n— С чего ты взял?\n— Ты перестала критиковать мою стрижку..."
-        await channel.send(f"🎭 **Анекдот дня:**\n\n{backup}\n\n🧛‍♂️")
+        await channel.send("🎭 Сегодня без анекдота… DeepSeek задумался слишком сильно. Попробуй !анекдот позже.")
 
 async def duck_search(query: str):
     url = "https://api.duckduckgo.com/"
@@ -164,7 +195,6 @@ async def send_holiday_messages():
     channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
     if not channel or not topic:
         return
-    
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Сегодня {topic}. Напиши короткое поздравление, 2-3 предложения."}
@@ -178,7 +208,6 @@ async def send_birthday_messages():
     channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
     if not channel:
         return
-    
     for user_id, info in users_memory.items():
         birthday = info.get("birthday", "")
         if birthday and birthday[:5] == today_str:
@@ -249,6 +278,18 @@ async def manual_refresh_emojis(ctx):
     bot.server_emojis = guild.emojis
     await ctx.send(f"✅ Загружено {len(bot.server_emojis)} эмодзи.")
 
+@bot.command(name='шанс')
+async def set_chance(ctx, value: int = None):
+    global response_chance
+    if value is None:
+        await ctx.send(f"🎲 Текущий шанс ответа: **{response_chance}%**")
+        return
+    if 0 <= value <= 100:
+        response_chance = value
+        await ctx.send(f"✅ Шанс ответа установлен на **{response_chance}%**")
+    else:
+        await ctx.send("❌ Шанс должен быть от 0 до 100.")
+
 async def add_astarion_reaction(message):
     try:
         await message.add_reaction(random.choice(ASTARION_REACTIONS))
@@ -264,6 +305,20 @@ def add_to_history(channel_id, role, content):
     if len(conversation_history[channel_id]) > MAX_HISTORY_MESSAGES:
         conversation_history[channel_id] = conversation_history[channel_id][-MAX_HISTORY_MESSAGES:]
 
+def get_spouse_list():
+    spouses = []
+    for uid, info in users_memory.items():
+        if uid == str(WIFE_ID):
+            continue
+        name = info.get("name", "Неизвестная")
+        raw_info = info.get("info", "")
+        husband = ""
+        if "married to" in raw_info:
+            husband = raw_info.split("married to ")[1].split(" from")[0]
+        if husband:
+            spouses.append(f"{name} замужем за {husband}")
+    return spouses[:20]
+
 @bot.event
 async def on_message(message):
     if message.author.bot:
@@ -271,21 +326,29 @@ async def on_message(message):
 
     add_to_history(message.channel.id, "user", message.content)
 
+    # Обработка изображений
+    image_base64 = None
+    if message.attachments:
+        for attach in message.attachments:
+            if attach.content_type and attach.content_type.startswith('image/'):
+                image_base64 = await process_image_attachment(attach)
+                if image_base64:
+                    print(f"🖼️ Изображение загружено: {attach.filename}")
+                    break
+
     reply_needed = False
-    
     if message.channel.id == WIFE_CHANNEL_ID:
         reply_needed = True
     elif message.channel.id == CELEBRATION_CHANNEL_ID:
         mentioned = bot.user in message.mentions
         name_mentioned = "астарион" in message.content.lower()
         replied_to_bot = message.reference and isinstance(message.reference.resolved, discord.Message) and message.reference.resolved.author.id == bot.user.id
-        
         if mentioned or name_mentioned or replied_to_bot:
             reply_needed = True
         else:
-            if random.randint(1, 100) <= CHANCE_TO_RESPOND_IN_CELEBRATION:
+            if random.randint(1, 100) <= response_chance:
                 reply_needed = True
-                print(f"🎲 Случайный ответ (2%)")
+                print(f"🎲 Случайный ответ ({response_chance}%)")
 
     if reply_needed and random.random() < 0.7:
         await add_astarion_reaction(message)
@@ -294,6 +357,7 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
+    # Обработка "посоветуй" (без картинок, они не влияют)
     if "посоветуй" in message.content.lower():
         for topic in TOPIC_MAP:
             if topic in message.content.lower():
@@ -320,25 +384,52 @@ async def on_message(message):
 
     uid = str(message.author.id)
     is_wife = (uid == str(WIFE_ID))
-    
     if is_wife:
         address = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
     else:
         address = "Дорогая"
+
+    # Информация об авторе
+    author_info = users_memory.get(uid, {})
+    author_name = author_info.get("name", "Неизвестная участница")
+    author_birthday = author_info.get("birthday", "")
+    author_info_raw = author_info.get("info", "")
+    author_husband = ""
+    if "married to" in author_info_raw:
+        author_husband = author_info_raw.split("married to ")[1].split(" from")[0]
+    author_city = ""
+    if "Lives in" in author_info_raw:
+        author_city = author_info_raw.split("Lives in ")[1].split(",")[0]
+    author_hobby = ""
+    if "from" in author_info_raw and "," in author_info_raw:
+        parts = author_info_raw.split(",")
+        if len(parts) >= 3:
+            author_hobby = ", ".join(parts[2:]).strip()
+    
+    personal_info = f"Информация об авторе:\nИмя: {author_name}\nЭто {'моя жена' if is_wife else 'не моя жена'}"
+    if author_husband:
+        personal_info += f"\nМуж: {author_husband}"
+    if author_city:
+        personal_info += f"\nГород: {author_city}"
+    if author_hobby:
+        personal_info += f"\nХобби/характеристики: {author_hobby}"
+    if author_birthday:
+        personal_info += f"\nДень рождения: {author_birthday}"
+    
+    spouses_list = get_spouse_list()
+    spouses_text = "\nИзвестные пары:\n" + "\n".join(spouses_list) if spouses_list else ""
     
     history = conversation_history.get(message.channel.id, [])[-MAX_HISTORY_MESSAGES:]
     
-    user_context = f"Сообщение: «{message.content}». Обращение: {address}. "
-    if is_wife:
-        user_context += "Это ТВОЯ ЖЕНА, используй ласковые обращения. "
-    else:
-        user_context += "Это НЕ твоя жена, обращайся только 'Дорогая'. "
-    
+    user_context = f"Сообщение: «{message.content}». Обращение: {address}.\n{personal_info}\n{spouses_text}\n"
     if hasattr(bot, 'server_emojis') and bot.server_emojis:
         emojis_list = [str(e) for e in bot.server_emojis[:50]]
-        user_context += f"\n\nДоступные эмодзи: {', '.join(emojis_list)}. Можешь ИНОГДА добавить ОДИН в конец."
+        user_context += f"\nДоступные эмодзи: {', '.join(emojis_list)}. Можешь ИНОГДА добавить ОДИН в конец."
+    user_context += "\nОтветь коротко и естественно, обращаясь только к этому человеку. Если это не моя жена, не используй ласковые имена."
     
-    user_context += " Ответь коротко и естественно."
+    # Добавим подсказку, если есть изображение
+    if image_base64:
+        user_context += " К сообщению приложено изображение. Опиши его или прокомментируй, если нужно."
     
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -346,7 +437,7 @@ async def on_message(message):
         {"role": "user", "content": user_context}
     ]
     
-    reply = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
+    reply = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT, image_base64=image_base64)
     
     if reply:
         if is_wife:
@@ -361,10 +452,12 @@ async def on_message(message):
 
 @bot.event
 async def on_ready():
+    global response_chance
     print(f"✅ Астарион запущен как {bot.user}")
-    print(f"🎲 Шанс ответа в праздниках: {CHANCE_TO_RESPOND_IN_CELEBRATION}%")
+    print(f"🎲 Шанс ответа в праздниках: {response_chance}% (можно изменить командой !шанс)")
+    if response_chance == 0:
+        print("⚠️ Внимание: шанс ответа = 0%. Чтобы Астарион отвечал, установи команду !шанс число (например, !шанс 5)")
     
-    # Синхронизация слеш-команд (удаляет старые типа attention_chance)
     await bot.tree.sync()
     print("✅ Слеш-команды синхронизированы")
     
