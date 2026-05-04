@@ -138,7 +138,7 @@ async def send_daily_joke():
         await channel.send(f"🎭 **Анекдот дня от Астариона:**\n\n{joke}\n\n🧛‍♂️")
         print("Анекдот отправлен")
     else:
-        print("Не удалось сгенерировать анекдот, DeepSeek вернул пустой ответ")
+        print("Не удалось сгенерировать анекдот")
         await channel.send("🎭 Не придумал сегодня анекдот... Попробую завтра.")
 
 async def duck_search(query: str):
@@ -207,7 +207,6 @@ async def daily_wife_message():
     await bot.wait_until_ready()
     channel = bot.get_channel(WIFE_CHANNEL_ID)
     if channel:
-        # Генерируем живое сообщение через DeepSeek
         affectionate = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
         prompt = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -416,11 +415,9 @@ async def on_ready():
     print(f"✅ Астарион запущен как {bot.user}")
     print(f"🎲 Шанс ответа: {response_chance}% (команда !шанс)")
     
-    # Синхронизация слеш-команд
     await bot.tree.sync()
     print("✅ Слеш-команды синхронизированы")
     
-    # Загружаем эмодзи
     guild = bot.get_guild(GUILD_ID_FOR_EMOJIS)
     if guild:
         await guild.fetch_emojis()
@@ -430,11 +427,17 @@ async def on_ready():
         bot.server_emojis = []
         print("⚠️ Сервер эмодзи не найден")
     
-    # Запускаем все задачи
-    for task in [daily_wife_message, daily_joke_task, holiday_task, birthday_task, refresh_emojis_task]:
+    tasks_list = [
+        daily_wife_message,
+        daily_joke_task,
+        holiday_task,
+        birthday_task,
+        refresh_emojis_task
+    ]
+    for task in tasks_list:
         if not task.is_running():
             task.start()
-            print(f"✅ Задача {task.__name__} запущена")
+            print(f"✅ Задача {task.coro.__name__} запущена")
 
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
