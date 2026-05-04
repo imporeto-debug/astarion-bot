@@ -112,29 +112,34 @@ async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float
                 if resp.status != 200:
                     error_text = await resp.text()
                     print(f"DeepSeek ошибка {resp.status}: {error_text[:200]}")
-                    return f"❌ Ошибка API: {resp.status}"
+                    return None
                 data = await resp.json()
                 return data.get("choices", [{}])[0].get("message", {}).get("content", "")
         except asyncio.TimeoutError:
-            return "⏳ Таймаут..."
+            print("Таймаут DeepSeek")
+            return None
         except Exception as e:
-            return f"❌ Ошибка: {e}"
+            print(f"Ошибка DeepSeek: {e}")
+            return None
 
 async def send_daily_joke():
     channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
     if not channel:
+        print("Канал праздников не найден")
         return
     theme = random.choice(JOKE_THEMES)
     print(f"🎲 Анекдот на тему: {theme}")
     joke_prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Напиши короткий анекдот на тему '{theme}'. 2-4 предложения. Будь оригинальным."}
+        {"role": "user", "content": f"Придумай короткий анекдот (шутку) на тему '{theme}'. 2-4 предложения. Без лишних слов. Только анекдот."}
     ]
-    joke = await ask_deepseek(joke_prompt, max_tokens=MAX_JOKE_TOKENS, temperature=1.1)
-    if joke and len(joke.strip()) > 15 and not joke.startswith("❌"):
+    joke = await ask_deepseek(joke_prompt, max_tokens=MAX_JOKE_TOKENS, temperature=0.9)
+    if joke and len(joke.strip()) > 10:
         await channel.send(f"🎭 **Анекдот дня от Астариона:**\n\n{joke}\n\n🧛‍♂️")
+        print("Анекдот отправлен")
     else:
-        await channel.send("🎭 Сегодня без анекдота… Попробуй !анекдот позже.")
+        print("Не удалось сгенерировать анекдот, DeepSeek вернул пустой ответ")
+        await channel.send("🎭 Не придумал сегодня анекдот... Попробую завтра.")
 
 async def duck_search(query: str):
     url = "https://api.duckduckgo.com/"
@@ -172,10 +177,10 @@ async def send_holiday_messages():
         return
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Сегодня {topic}. Напиши короткое поздравление, 2-3 предложения."}
+        {"role": "user", "content": f"Сегодня {topic}. Напиши короткое поздравление для всех, 2-3 предложения, с лёгким сарказмом."}
     ]
     content = await ask_deepseek(prompt, max_tokens=200)
-    if content and not content.startswith("❌"):
+    if content:
         await channel.send(f"@everyone\n\n{content}")
 
 async def send_birthday_messages():
@@ -191,10 +196,10 @@ async def send_birthday_messages():
                 name = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
             prompt = [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Поздравь {name} с днём рождения, коротко и с юмором. Это {'твоя жена' if str(user_id) == str(WIFE_ID) else 'не жена, просто участница'}."}
+                {"role": "user", "content": f"Поздравь {name} с днём рождения. Коротко (2-3 предложения), с юмором. Это {'твоя жена' if str(user_id) == str(WIFE_ID) else 'не жена, просто участница'}."}
             ]
             content = await ask_deepseek(prompt, max_tokens=200)
-            if content and not content.startswith("❌"):
+            if content:
                 await channel.send(f"<@{user_id}> {content}")
 
 @tasks.loop(time=time(hour=16, minute=0))
@@ -202,8 +207,16 @@ async def daily_wife_message():
     await bot.wait_until_ready()
     channel = bot.get_channel(WIFE_CHANNEL_ID)
     if channel:
+        # Генерируем живое сообщение через DeepSeek
         affectionate = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
-        await channel.send(f"<@{WIFE_ID}> {affectionate}, как день? *потягивается*")
+        prompt = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": f"Твоя жена (обращение {affectionate}) возвращается домой. Напиши короткое сообщение (2-3 предложения) в своём стиле: расскажи немного о своём дне (что ты делал, что смешного/скучного), и спроси, как прошёл её день. Будь естественным, как муж."}
+        ]
+        message_text = await ask_deepseek(prompt, max_tokens=200, temperature=0.9)
+        if not message_text:
+            message_text = f"{affectionate}, как дела? У меня тут всё скучно, без тебя. *потягивается*"
+        await channel.send(f"<@{WIFE_ID}> {message_text}")
 
 @tasks.loop(time=time(hour=15, minute=0))
 async def daily_joke_task():
@@ -333,7 +346,7 @@ async def on_message(message):
                         {"role": "user", "content": f"Вот что нашлось: {', '.join(results[:3])}. Дай 2-3 рекомендации."}
                     ]
                     reply = await ask_deepseek(prompt, max_tokens=300)
-                    if reply and not reply.startswith("❌"):
+                    if reply:
                         try:
                             await message.reply(reply, mention_author=False)
                         except:
@@ -386,7 +399,7 @@ async def on_message(message):
     prompt = [{"role": "system", "content": SYSTEM_PROMPT}] + history + [{"role": "user", "content": user_context}]
     reply = await ask_deepseek(prompt, max_tokens=MAX_RESPONSE_TOKENS_SHORT)
 
-    if reply and not reply.startswith("❌"):
+    if reply:
         if is_wife:
             reply = reply.replace(f"<@{WIFE_ID}>", address)
         add_to_history(message.channel.id, "assistant", reply.strip())
@@ -402,7 +415,12 @@ async def on_ready():
     global response_chance
     print(f"✅ Астарион запущен как {bot.user}")
     print(f"🎲 Шанс ответа: {response_chance}% (команда !шанс)")
+    
+    # Синхронизация слеш-команд
     await bot.tree.sync()
+    print("✅ Слеш-команды синхронизированы")
+    
+    # Загружаем эмодзи
     guild = bot.get_guild(GUILD_ID_FOR_EMOJIS)
     if guild:
         await guild.fetch_emojis()
@@ -410,10 +428,13 @@ async def on_ready():
         print(f"📦 Загружено {len(bot.server_emojis)} эмодзи")
     else:
         bot.server_emojis = []
-
+        print("⚠️ Сервер эмодзи не найден")
+    
+    # Запускаем все задачи
     for task in [daily_wife_message, daily_joke_task, holiday_task, birthday_task, refresh_emojis_task]:
         if not task.is_running():
             task.start()
+            print(f"✅ Задача {task.__name__} запущена")
 
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
