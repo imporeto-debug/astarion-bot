@@ -83,6 +83,43 @@ JOKE_THEMES = [
     "животные", "интернет", "путешествия", "спорт", "телевидение"
 ]
 
+ROMANTIC_MOODS = [
+    "сонный",
+    "игривый",
+    "саркастичный",
+    "ревнивый",
+    "нежный",
+    "раздражённый",
+    "ленивый",
+    "довольный",
+    "скучающий",
+    "слишком самодовольный"
+]
+
+DAY_EVENTS = [
+    "читал новости",
+    "спорил с кем-то в интернете",
+    "искал новый кинжал",
+    "пил вино и слушал чужие разговоры",
+    "случайно проспал полдня",
+    "сидел на форуме",
+    "читал какую-то ерунду",
+    "ругался с торговцем",
+    "гулял ночью",
+    "слишком долго выбирал рубашку",
+    "играл в карты",
+    "слушал сплетни",
+]
+
+ROMANTIC_INTENTS = [
+    "просто хочет поговорить",
+    "хочет внимания",
+    "хочет пофлиртовать",
+    "хочет позвать жену куда-нибудь",
+    "хочет подарить что-нибудь красивое",
+    "соскучился",
+]
+
 def load_users():
     try:
         with open("users.json", "r", encoding="utf-8") as f:
@@ -205,17 +242,75 @@ async def send_birthday_messages():
 @tasks.loop(time=time(hour=16, minute=0))
 async def daily_wife_message():
     await bot.wait_until_ready()
+
     channel = bot.get_channel(WIFE_CHANNEL_ID)
-    if channel:
-        affectionate = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
-        prompt = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"Твоя жена (обращение {affectionate}) возвращается домой. Напиши короткое сообщение (2-3 предложения) в своём стиле: расскажи немного о своём дне (что ты делал, что смешного/скучного), и спроси, как прошёл её день. Будь естественным, как муж."}
-        ]
-        message_text = await ask_deepseek(prompt, max_tokens=200, temperature=0.9)
-        if not message_text:
-            message_text = f"{affectionate}, как дела? У меня тут всё скучно, без тебя. *потягивается*"
-        await channel.send(f"<@{WIFE_ID}> {message_text}")
+
+    if not channel:
+        return
+
+    affectionate = random.choice([
+        "Баклажанчик",
+        "Солнышко",
+        "Бусинка",
+        "Милашка"
+    ])
+
+    mood = random.choice(ROMANTIC_MOODS)
+    event = random.choice(DAY_EVENTS)
+    intent = random.choice(ROMANTIC_INTENTS)
+
+    prompt = [
+        {
+            "role": "system",
+            "content": SYSTEM_PROMPT
+        },
+        {
+            "role": "user",
+            "content": f"""
+Ты пишешь своей жене вечером.
+
+Твоё настроение: {mood}
+
+Сегодня ты:
+{event}
+
+Скрытое намерение:
+{intent}
+
+Пиши естественно, как живой человек.
+Не делай сообщение идеальным или литературным.
+Можно флиртовать, язвить, жаловаться, шутить.
+Иногда будь хаотичным.
+Иногда веди себя как уставший вампир.
+
+Если даришь подарок —
+это должно быть что-то красивое, стильное или редкое.
+
+Не перечисляй факты.
+Не объясняй себя.
+Не используй шаблонную романтику.
+
+Обращение к жене: {affectionate}
+
+Напиши короткое живое сообщение.
+"""
+        }
+    ]
+
+    message_text = await ask_deepseek(
+        prompt,
+        max_tokens=260,
+        temperature=0.9
+    )
+
+    if not message_text:
+        message_text = (
+            f"{affectionate}, я сегодня слишком долго спорил "
+            f"с идиотом в интернете. Утомительно. "
+            f"Как ты?"
+        )
+
+    await channel.send(f"<@{WIFE_ID}> {message_text}")
 
 @tasks.loop(time=time(hour=15, minute=0))
 async def daily_joke_task():
