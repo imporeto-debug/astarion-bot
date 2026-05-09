@@ -566,5 +566,13 @@ async def on_ready():
             task.start()
             print(f"✅ Задача {task.coro.__name__} запущена")
 
+@bot.event
+async def on_close():
+    global http_session
+
+    if http_session and not http_session.closed:
+        await http_session.close()
+
+
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
