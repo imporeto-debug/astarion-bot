@@ -128,6 +128,7 @@ def load_users():
         return {}
 
 conversation_history = {}
+http_session = None
 
 async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float = 0.9):
     global http_session
