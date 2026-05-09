@@ -237,7 +237,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 users_memory = load_users()
-http_session = None
 
 async def send_holiday_messages():
     today_str = datetime.now().strftime("%d-%m")
