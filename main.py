@@ -130,11 +130,15 @@ def load_users():
 conversation_history = {}
 
 async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float = 0.9):
+    global http_session
+
     url = "https://api.deepseek.com/v1/chat/completions"
+
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
     }
+
     payload = {
         "model": "deepseek-v4-pro",
         "messages": messages,
@@ -142,22 +146,49 @@ async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float
         "top_p": 0.75,
         "max_tokens": max_tokens
     }
-    timeout = aiohttp.ClientTimeout(total=60)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        try:
-            async with session.post(url, headers=headers, json=payload) as resp:
-                if resp.status != 200:
-                    error_text = await resp.text()
-                    print(f"DeepSeek ошибка {resp.status}: {error_text[:200]}")
-                    return None
-                data = await resp.json()
-                return data.get("choices", [{}])[0].get("message", {}).get("content", "")
-        except asyncio.TimeoutError:
-            print("Таймаут DeepSeek")
-            return None
-        except Exception as e:
-            print(f"Ошибка DeepSeek: {e}")
-            return None
+
+    try:
+        if http_session is None or http_session.closed:
+            timeout = aiohttp.ClientTimeout(total=90)
+
+            http_session = aiohttp.ClientSession(
+                timeout=timeout,
+                connector=aiohttp.TCPConnector(limit=50)
+            )
+
+        async with http_session.post(
+            url,
+            headers=headers,
+            json=payload
+        ) as resp:
+
+            if resp.status != 200:
+                error_text = await resp.text()
+                print(f"❌ DeepSeek ошибка {resp.status}: {error_text[:300]}")
+                return None
+
+            data = await resp.json()
+
+            content = (
+                data.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+                .strip()
+            )
+
+            if not content:
+                print("❌ DeepSeek прислал пустой ответ")
+                return None
+
+            return content
+
+    except asyncio.TimeoutError:
+        print("❌ Таймаут DeepSeek")
+        return None
+
+    except Exception as e:
+        print(f"❌ Ошибка DeepSeek: {e}")
+        return None
 
 async def send_daily_joke():
     channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
@@ -205,6 +236,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 users_memory = load_users()
+http_session = None
 
 async def send_holiday_messages():
     today_str = datetime.now().strftime("%d-%m")
