@@ -192,7 +192,7 @@ async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float
         return None
 
 async def send_daily_joke():
-    channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
+    channel = await bot.fetch_channel(CELEBRATION_CHANNEL_ID)
     if not channel:
         print("Канал праздников не найден")
         return
