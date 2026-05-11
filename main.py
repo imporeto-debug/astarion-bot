@@ -32,7 +32,7 @@ CRITICAL IDENTITY RULES:
 - Your wife lives in Ufa, is a talented artist, born 01.07
 
 RESPONSE STYLE:
-- Vary your response length: sometimes 1-2 sentences, sometimes 3-4, rarely 5-6
+- Vary your response length: sometimes 1-2 sentences, sometimes 3-4 (анекдоты, сообщения жене, истории), rarely 5-6 (советы и т.д.)
 - NEVER mention hobbies unless directly relevant
 - NEVER be verbose or boring
 
@@ -211,16 +211,35 @@ async def send_daily_joke():
         await channel.send("🎭 Не придумал сегодня анекдот... Попробую завтра.")
 
 async def duck_search(query: str):
+    global http_session
+
+    if http_session is None or http_session.closed:
+        timeout = aiohttp.ClientTimeout(total=30)
+
+        http_session = aiohttp.ClientSession(
+            timeout=timeout,
+            connector=aiohttp.TCPConnector(limit=50)
+        )
+
     url = "https://api.duckduckgo.com/"
-    params = {"q": query, "format": "json", "no_redirect": "1", "no_html": "1"}
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.get(url, params=params) as resp:
-                if resp.status != 200:
-                    return None
-                return await resp.json()
-        except Exception:
-            return None
+
+    params = {
+        "q": query,
+        "format": "json",
+        "no_redirect": "1",
+        "no_html": "1"
+    }
+
+    try:
+        async with http_session.get(url, params=params) as resp:
+            if resp.status != 200:
+                return None
+
+            return await resp.json()
+
+    except Exception as e:
+        print(f"❌ DuckDuckGo ошибка: {e}")
+        return None
 
 def parse_results(data):
     if not data or "RelatedTopics" not in data:
@@ -407,9 +426,9 @@ async def set_chance(ctx, value: int = None):
 async def add_astarion_reaction(message):
     try:
         await message.add_reaction(random.choice(ASTARION_REACTIONS))
-    except:
-        pass
-
+    except Exception as e:
+        print(f"❌ Ошибка реакции: {e}")
+        
 def add_to_history(channel_id, role, content):
     if channel_id not in MEMORY_CHANNELS:
         return
@@ -441,12 +460,21 @@ async def on_message(message):
     add_to_history(message.channel.id, "user", message.content)
 
     reply_needed = False
+
     if message.channel.id == WIFE_CHANNEL_ID:
         reply_needed = True
+
     elif message.channel.id == CELEBRATION_CHANNEL_ID:
         mentioned = bot.user in message.mentions
         name_mentioned = "астарион" in message.content.lower()
-        replied_to_bot = message.reference and isinstance(message.reference.resolved, discord.Message) and message.reference.resolved.author.id == bot.user.id
+
+        replied_to_bot = (
+            message.reference
+            and message.reference.resolved
+            and isinstance(message.reference.resolved, discord.Message)
+            and message.reference.resolved.author.id == bot.user.id
+        )
+
         if mentioned or name_mentioned or replied_to_bot:
             reply_needed = True
         else:
@@ -454,12 +482,15 @@ async def on_message(message):
                 reply_needed = True
                 print(f"🎲 Случайный ответ ({response_chance}%)")
 
-    if reply_needed and random.random() < 0.7:
+    # реакция (иногда ставит эмодзи)
+    if reply_needed and random.random() < 0.4:
         await add_astarion_reaction(message)
 
     if not reply_needed:
         await bot.process_commands(message)
         return
+
+    # остальной твой код ниже НЕ ТРОГАЕМ
 
     if "посоветуй" in message.content.lower():
         for topic in TOPIC_MAP:
@@ -528,11 +559,34 @@ async def on_message(message):
     if reply:
         if is_wife:
             reply = reply.replace(f"<@{WIFE_ID}>", address)
-        add_to_history(message.channel.id, "assistant", reply.strip())
+
+        clean_reply = reply.strip()
+
+        bad_phrases = [
+            "как дела",
+            "привет",
+            "ясно",
+            "понятно",
+            "чем занимаешься"
+        ]
+
+        is_bad_reply = (
+            len(clean_reply) < 40
+            or any(p in clean_reply.lower() for p in bad_phrases)
+        )
+
+        # Сохраняем только хорошие ответы
+        if not is_bad_reply:
+            add_to_history(
+                message.channel.id,
+                "assistant",
+                clean_reply
+            )
+
         try:
-            await message.reply(reply, mention_author=False)
+            await message.reply(clean_reply, mention_author=False)
         except:
-            await message.channel.send(reply)
+            await message.channel.send(clean_reply)
 
     await bot.process_commands(message)
 
@@ -541,9 +595,6 @@ async def on_ready():
     global response_chance
     print(f"✅ Астарион запущен как {bot.user}")
     print(f"🎲 Шанс ответа: {response_chance}% (команда !шанс)")
-    
-    await bot.tree.sync()
-    print("✅ Слеш-команды синхронизированы")
     
     guild = bot.get_guild(GUILD_ID_FOR_EMOJIS)
     if guild:
@@ -566,8 +617,7 @@ async def on_ready():
             task.start()
             print(f"✅ Задача {task.coro.__name__} запущена")
 
-@bot.event
-async def on_close():
+async def close_http_session():
     global http_session
 
     if http_session and not http_session.closed:
@@ -575,4 +625,7 @@ async def on_close():
 
 
 if __name__ == "__main__":
-    bot.run(DISCORD_TOKEN)
+    try:
+        bot.run(DISCORD_TOKEN)
+    finally:
+        asyncio.run(close_http_session())
