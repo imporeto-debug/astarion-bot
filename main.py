@@ -2,6 +2,7 @@ import os
 import json
 import random
 from datetime import datetime, time
+from zoneinfo import ZoneInfo
 import asyncio
 import aiohttp
 import discord
@@ -20,6 +21,16 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
 if not DISCORD_TOKEN or not DEEPSEEK_API_KEY:
     raise RuntimeError("Missing DISCORD_TOKEN or DEEPSEEK_API_KEY")
+
+MSK = ZoneInfo("Europe/Moscow")
+
+def now_msk():
+    return datetime.now(MSK)
+
+def utc_time(hour_msk: int, minute: int = 0) -> time:
+    """Конвертирует час по МСК (UTC+3) в UTC для tasks.loop."""
+    utc_hour = (hour_msk - 3) % 24
+    return time(hour=utc_hour, minute=minute)
 
 SYSTEM_PROMPT = """
 You are Astarion Ancunin from Baldur's Gate 3. You speak only Russian.
@@ -93,6 +104,7 @@ ROMANTIC_INTENTS = [
     "соскучился",
 ]
 
+
 def load_users():
     try:
         with open("users.json", "r", encoding="utf-8") as f:
@@ -100,8 +112,10 @@ def load_users():
     except Exception:
         return {}
 
+
 conversation_history = {}
 http_session = None
+
 
 # ====================== ASCII ТЕМЫ ======================
 def get_random_ascii_topic():
@@ -109,24 +123,23 @@ def get_random_ascii_topic():
         user_id = random.choice(list(users_memory.keys()))
         info = users_memory.get(user_id, {})
         name = info.get("name", "участница")
-        
+
         if str(user_id) == str(WIFE_ID):
             return "портрет жены"
-        
+
         raw_info = info.get("info", "")
         if "married to" in raw_info:
             husband = raw_info.split("married to ")[1].split(" from")[0]
             return f"портрет {husband}"
-        
+
         return f"портрет {name}"
-    
-    topics = [
-        "природа", "магия", "политика"
-    ]
+
+    topics = ["природа", "магия", "политика"]
     return random.choice(topics)
 
 
-async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float = 0.9):
+# ====================== DEEPSEEK API ======================
+async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float = 0.9, retries: int = 2):
     global http_session
     url = "https://api.deepseek.com/v1/chat/completions"
     headers = {
@@ -140,53 +153,72 @@ async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float
         "top_p": 0.75,
         "max_tokens": max_tokens
     }
-    try:
-        if http_session is None or http_session.closed:
-            timeout = aiohttp.ClientTimeout(total=90)
-            http_session = aiohttp.ClientSession(
-                timeout=timeout,
-                connector=aiohttp.TCPConnector(limit=50)
-            )
-        async with http_session.post(url, headers=headers, json=payload) as resp:
-            if resp.status != 200:
-                return None
-            data = await resp.json()
-            content = (
-                data.get("choices", [{}])[0]
-                .get("message", {})
-                .get("content", "")
-                .strip()
-            )
-            return content if content else None
-    except Exception as e:
-        print(f"❌ Ошибка DeepSeek: {e}")
-        return None
+
+    for attempt in range(retries + 1):
+        try:
+            if http_session is None or http_session.closed:
+                timeout = aiohttp.ClientTimeout(total=90)
+                http_session = aiohttp.ClientSession(
+                    timeout=timeout,
+                    connector=aiohttp.TCPConnector(limit=50)
+                )
+            async with http_session.post(url, headers=headers, json=payload) as resp:
+                if resp.status != 200:
+                    print(f"❌ DeepSeek вернул статус {resp.status}")
+                    return None
+                data = await resp.json()
+                content = (
+                    data.get("choices", [{}])[0]
+                    .get("message", {})
+                    .get("content", "")
+                    .strip()
+                )
+                return content if content else None
+        except Exception as e:
+            print(f"❌ Ошибка DeepSeek (попытка {attempt + 1}): {e}")
+            if attempt < retries:
+                await asyncio.sleep(2)
+    return None
 
 
-# ====================== ASCII РИСУНКИ С КОММЕНТАРИЕМ ======================
+# ====================== АНЕКДОТ ======================
+async def send_daily_joke():
+    channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
+    if not channel:
+        return
+
+    theme = random.choice(JOKE_THEMES)
+    prompt = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": f"Расскажи короткий анекдот на тему «{theme}». 2–4 предложения, в стиле Астариона — остроумно и с сарказмом. Только анекдот, без предисловий."}
+    ]
+    joke = await ask_deepseek(prompt, max_tokens=MAX_JOKE_TOKENS, temperature=1.0)
+    if joke:
+        await channel.send(f"🎭 **Анекдот дня** (тема: {theme})\n\n{joke.strip()}")
+
+
+# ====================== ASCII РИСУНКИ ======================
 async def send_wednesday_ascii():
     channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
     if not channel:
         return
-    today = datetime.now()
+    today = now_msk()
     date_str = today.strftime("%d.%m.%Y")
-    
+
     topic = get_random_ascii_topic()
-    
-    # Комментарий от Астариона
+
     comment_prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Напиши короткий комментарий (1-2 предложения) к ASCII-арту на тему '{topic}'. В стиле Астариона — саркастично, элегантно или игриво. Только комментарий."}
     ]
     comment = await ask_deepseek(comment_prompt, max_tokens=180, temperature=0.9)
-    
-    # Сам рисунок
+
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Нарисуй ASCII-art на тему: {topic}\nВАЖНО: Только ASCII символы. Ширина максимум 40, высота максимум 22. Без объяснений.\nФОРМАТ: ASCII:\nрисунок"}
     ]
     response = await ask_deepseek(prompt, max_tokens=700, temperature=1.0)
-    
+
     if not response or "ASCII:" not in response:
         ascii_art = r'''
    /\_/\  
@@ -196,17 +228,17 @@ async def send_wednesday_ascii():
     else:
         try:
             ascii_art = response.split("ASCII:")[1].strip()
-        except:
+        except Exception:
             ascii_art = r'''
    /\_/\  
   ( o.o ) 
    > ^ <  
         '''
-    
-    full_message = f"""🗓️ **Среда, {date_str}** — особенный рисунок от Астариона\n\n```text\n{ascii_art}\n```"""
+
+    full_message = f"🗓️ **Среда, {date_str}** — особенный рисунок от Астариона\n\n```text\n{ascii_art}\n```"
     if comment and len(comment.strip()) > 10:
         full_message += f"\n\n{comment.strip()}"
-    
+
     await channel.send(full_message)
 
 
@@ -214,41 +246,39 @@ async def send_ascii_art():
     channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
     if not channel:
         return
-    
+
     topic = get_random_ascii_topic()
-    
-    # Комментарий от Астариона
+
     comment_prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Напиши короткий комментарий (1-2 предложения) к ASCII-арту на тему '{topic}'. В стиле Астариона — саркастично, элегантно или игриво. Только комментарий."}
     ]
     comment = await ask_deepseek(comment_prompt, max_tokens=180, temperature=0.9)
-    
-    # Сам рисунок
+
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Нарисуй ASCII-art на тему: {topic}\nВАЖНО: Только ASCII символы. Ширина максимум 35, высота максимум 20. Без объяснений.\nФОРМАТ: ASCII:\nрисунок"}
     ]
     response = await ask_deepseek(prompt, max_tokens=700, temperature=1.0)
-    
+
     if not response:
         return
     try:
         ascii_art = response.split("ASCII:")[1].strip()
-    except:
+    except Exception:
         ascii_art = r'''
- /\_/\\\\
+ /\_/\
 ( o.o )
  > ^ <
 '''
-    full_message = f"""🎨 **ASCII рисунок**\n```text\n{ascii_art}\n```"""
+    full_message = f"🎨 **ASCII рисунок**\n```text\n{ascii_art}\n```"
     if comment and len(comment.strip()) > 10:
         full_message += f"\n\n{comment.strip()}"
-    
+
     await channel.send(full_message)
 
 
-# ====================== ОСТАЛЬНОЙ КОД ======================
+# ====================== ПОИСК ======================
 async def duck_search(query: str):
     global http_session
     if http_session is None or http_session.closed:
@@ -286,6 +316,7 @@ def parse_results(data):
     return res
 
 
+# ====================== БОТ ======================
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
@@ -293,7 +324,7 @@ users_memory = load_users()
 
 
 async def send_holiday_messages():
-    today_str = datetime.now().strftime("%d-%m")
+    today_str = now_msk().strftime("%d-%m")
     topic = HOLIDAYS.get(today_str)
     channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
     if not channel or not topic:
@@ -311,7 +342,7 @@ async def send_holiday_messages():
 
 
 async def send_birthday_messages():
-    today_str = datetime.now().strftime("%d-%m")
+    today_str = now_msk().strftime("%d-%m")
     channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
     if not channel:
         return
@@ -333,55 +364,64 @@ async def send_birthday_messages():
                 await channel.send(f"<@{user_id}> {content}")
 
 
-@tasks.loop(time=time(hour=16, minute=0))
+# ====================== ЗАДАЧИ ======================
+# Все времена указаны по МСК. utc_time() переводит их в UTC для tasks.loop.
+
+@tasks.loop(time=utc_time(19, 0))  # 19:00 МСК
 async def daily_wife_message():
     await bot.wait_until_ready()
     channel = bot.get_channel(WIFE_CHANNEL_ID)
     if not channel:
         return
+
     affectionate = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"])
     mood = random.choice(ROMANTIC_MOODS)
     event = random.choice(DAY_EVENTS)
     intent = random.choice(ROMANTIC_INTENTS)
+
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {
             "role": "user",
-            "content": f"""
-Ты пишешь своей жене вечером.
-Твоё настроение: {mood}
-Сегодня ты: {event}
-Скрытое намерение: {intent}
-Обращение к жене: {affectionate}
-Пиши естественно, как живой человек.
-"""
+            "content": f"""Ты — Астарион Анкунин. Вечер, 19:00. Пишешь своей жене.
+
+Текущая ситуация:
+- Настроение: {mood}
+- Чем занимался сегодня: {event}
+- Скрытое намерение: {intent}
+- Обращение: {affectionate}
+
+Спроси как прошёл её день — в своём стиле, живо и коротко.
+Можешь добавить что-то о себе или лёгкую провокацию. 1–3 предложения."""
         }
     ]
-    message_text = await ask_deepseek(prompt, max_tokens=260, temperature=0.9)
-    if not message_text:
-        message_text = f"{affectionate}, я сегодня слишком долго спорил с идиотом в интернете. Утомительно. Как ты?"
-    await channel.send(f"<@{WIFE_ID}> {message_text}")
+
+    message_text = await ask_deepseek(prompt, max_tokens=280, temperature=0.94)
+    if message_text and message_text.strip():
+        await channel.send(f"<@{WIFE_ID}> {message_text.strip()}")
 
 
-@tasks.loop(time=time(hour=15, minute=0))
+@tasks.loop(time=utc_time(15, 0))  # 15:00 МСК
 async def daily_joke_task():
     await bot.wait_until_ready()
     await send_daily_joke()
 
 
-@tasks.loop(hours=24)
-async def ascii_art_task():
+@tasks.loop(time=utc_time(8, 0))  # 08:00 МСК — только по средам
+async def wednesday_ascii_task():
     await bot.wait_until_ready()
-    await send_ascii_art()
+    # Проверяем день именно по МСК, чтобы не было сдвига около полуночи
+    if now_msk().weekday() == 2:  # 2 = среда
+        await send_wednesday_ascii()
 
 
-@tasks.loop(time=time(hour=10, minute=0))
+@tasks.loop(time=utc_time(10, 0))  # 10:00 МСК
 async def holiday_task():
     await bot.wait_until_ready()
     await send_holiday_messages()
 
 
-@tasks.loop(time=time(hour=11, minute=0))
+@tasks.loop(time=utc_time(11, 0))  # 11:00 МСК
 async def birthday_task():
     await bot.wait_until_ready()
     await send_birthday_messages()
@@ -396,17 +436,10 @@ async def refresh_emojis_task():
         bot.server_emojis = guild.emojis
 
 
-@tasks.loop(time=time(hour=8, minute=0))
-async def wednesday_ascii_task():
-    await bot.wait_until_ready()
-    if datetime.now().weekday() == 2:
-        await send_wednesday_ascii()
-
-
 # ====================== КОМАНДЫ ======================
 @bot.command(name='сегодня')
 async def show_today(ctx):
-    today_str = datetime.now().strftime("%d-%m")
+    today_str = now_msk().strftime("%d-%m")
     holiday = HOLIDAYS.get(today_str, "Обычный день")
     embed = discord.Embed(title=f"📅 Сегодня {today_str}", color=discord.Color.gold())
     embed.add_field(name="🎉 Праздник", value=holiday, inline=False)
@@ -447,6 +480,7 @@ async def set_chance(ctx, value: int = None):
         await ctx.send("❌ Шанс от 0 до 100.")
 
 
+# ====================== ВСПОМОГАТЕЛЬНЫЕ ======================
 async def add_astarion_reaction(message):
     try:
         await message.add_reaction(random.choice(ASTARION_REACTIONS))
@@ -479,6 +513,7 @@ def get_spouse_list():
     return spouses[:20]
 
 
+# ====================== ОБРАБОТКА СООБЩЕНИЙ ======================
 @bot.event
 async def on_message(message):
     if message.author.bot:
@@ -490,7 +525,7 @@ async def on_message(message):
         reply_needed = True
     elif message.channel.id == CELEBRATION_CHANNEL_ID:
         mentioned = bot.user in message.mentions
-        name_mentioned = ("астарион" in message.content.lower())
+        name_mentioned = "астарион" in message.content.lower()
         replied_to_bot = (
             message.reference and
             message.reference.resolved and
@@ -499,9 +534,8 @@ async def on_message(message):
         )
         if mentioned or name_mentioned or replied_to_bot:
             reply_needed = True
-        else:
-            if random.randint(1, 100) <= response_chance:
-                reply_needed = True
+        elif random.randint(1, 100) <= response_chance:
+            reply_needed = True
 
     if reply_needed and random.random() < 0.4:
         await add_astarion_reaction(message)
@@ -510,6 +544,7 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
+    # Поиск по теме
     if "посоветуй" in message.content.lower():
         for topic in TOPIC_MAP:
             if topic in message.content.lower():
@@ -528,6 +563,7 @@ async def on_message(message):
                 await bot.process_commands(message)
                 return
 
+    # Информация об авторе
     uid = str(message.author.id)
     is_wife = (uid == str(WIFE_ID))
     address = random.choice(["Баклажанчик", "Солнышко", "Бусинка", "Милашка"]) if is_wife else "Дорогая"
@@ -566,14 +602,14 @@ async def on_message(message):
 
     history = conversation_history.get(message.channel.id, [])[-MAX_HISTORY_MESSAGES:]
 
-    today = datetime.now()
+    today = now_msk()
     weekday_ru = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"][today.weekday()]
     date_str = today.strftime("%d.%m.%Y")
     time_str = today.strftime("%H:%M")
 
     user_context = (
         f"Сегодня: {date_str} ({weekday_ru}), сейчас {time_str}.\n"
-        f"Сообщение: «{message.content}». "
+        f"Сообщение: «{message.content}».\n"
         f"Обращение: {address}.\n"
         f"{personal_info}\n"
         f"{spouses_text}\n"
@@ -598,15 +634,18 @@ async def on_message(message):
             clean_reply = clean_reply.replace(f"<@{WIFE_ID}>", address)
         try:
             await message.reply(clean_reply, mention_author=False)
-        except:
+        except Exception:
             await message.channel.send(clean_reply)
 
+    add_to_history(message.channel.id, "assistant", reply or "")
     await bot.process_commands(message)
 
 
+# ====================== СТАРТ ======================
 @bot.event
 async def on_ready():
     print(f"✅ Астарион запущен как {bot.user}")
+    print(f"🕐 Текущее время МСК: {now_msk().strftime('%H:%M')}")
     guild = bot.get_guild(GUILD_ID_FOR_EMOJIS)
     if guild:
         await guild.fetch_emojis()
@@ -615,11 +654,10 @@ async def on_ready():
     tasks_list = [
         daily_wife_message,
         daily_joke_task,
-        ascii_art_task,
+        wednesday_ascii_task,
         holiday_task,
         birthday_task,
         refresh_emojis_task,
-        wednesday_ascii_task
     ]
     for task in tasks_list:
         if not task.is_running():
@@ -633,8 +671,12 @@ async def close_http_session():
         await http_session.close()
 
 
-if __name__ == "__main__":
+async def main():
     try:
-        bot.run(DISCORD_TOKEN)
+        await bot.start(DISCORD_TOKEN)
     finally:
-        asyncio.run(close_http_session())
+        await close_http_session()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
