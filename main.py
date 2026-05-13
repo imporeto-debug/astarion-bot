@@ -14,6 +14,7 @@ MEMORY_CHANNELS = [1498832548573351966, 1498675612343074886]
 response_chance = 0
 EMOJI_REFRESH_HOURS = 168
 ASTARION_REACTIONS = ["🧛", "🩸", "🥀", "🎭", "🍷", "✨", "👔", "📜", "🗡️", "🕸️", "🦇", "🌙"]
+
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
@@ -73,11 +74,6 @@ JOKE_THEMES = [
     "животные", "интернет", "путешествия", "спорт", "телевидение"
 ]
 
-ASCII_TOPICS = [
-    "портрет жены", "вампир", "кот", "ворон", "магия", "лес",
-    "замок", "луна", "дракон", "меч",
-]
-
 ROMANTIC_MOODS = [
     "сонный", "игривый", "саркастичный", "ревнивый", "нежный",
     "раздражённый", "ленивый", "довольный", "скучающий", "слишком самодовольный"
@@ -107,6 +103,35 @@ def load_users():
 conversation_history = {}
 http_session = None
 
+# ====================== ASCII ТЕМЫ ======================
+def get_random_ascii_topic():
+    # 30% шанс на портрет реального человека из базы
+    if users_memory and random.random() < 0.30:
+        user_id = random.choice(list(users_memory.keys()))
+        info = users_memory.get(user_id, {})
+        name = info.get("name", "участница")
+        
+        if str(user_id) == str(WIFE_ID):
+            return "портрет жены"
+        
+        raw_info = info.get("info", "")
+        
+        # Портрет мужа участницы
+        if "married to" in raw_info:
+            husband = raw_info.split("married to ")[1].split(" from")[0]
+            return f"портрет {husband}"
+        
+        # Портрет обычной участницы
+        return f"портрет {name}"
+    
+    # 70% — общие вольные темы
+    topics = [
+        "природа", "магия", "политика"
+    ]
+    
+    return random.choice(topics)
+
+
 async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float = 0.9):
     global http_session
     url = "https://api.deepseek.com/v1/chat/completions"
@@ -128,9 +153,7 @@ async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float
                 timeout=timeout,
                 connector=aiohttp.TCPConnector(limit=50)
             )
-        async with http_session.post(
-            url, headers=headers, json=payload
-        ) as resp:
+        async with http_session.post(url, headers=headers, json=payload) as resp:
             if resp.status != 200:
                 error_text = await resp.text()
                 print(f"❌ DeepSeek ошибка {resp.status}: {error_text[:300]}")
@@ -156,13 +179,12 @@ async def send_wednesday_ascii():
     if not channel:
         print("⚠️ Канал для среды не найден")
         return
-
     today = datetime.now()
     date_str = today.strftime("%d.%m.%Y")
-
     print(f"🗓️ Сегодня Среда {date_str} — отправляем специальный рисунок")
-
-    topic = random.choice(ASCII_TOPICS)
+    
+    topic = get_random_ascii_topic()   # ← обновлено
+    
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {
@@ -180,26 +202,24 @@ ASCII:
 """
         }
     ]
-
     response = await ask_deepseek(prompt, max_tokens=700, temperature=1.0)
-    
+   
     if not response or "ASCII:" not in response:
         ascii_art = r'''
-   /\_/\  
-  ( o.o ) 
-   > ^ <  
-  /  |  \ 
+   /\_/\
+  ( o.o )
+   > ^ <
+  / | \
         '''
     else:
         try:
             ascii_art = response.split("ASCII:")[1].strip()
         except:
             ascii_art = r'''
-   /\_/\  
-  ( o.o ) 
-   > ^ <  
+   /\_/\
+  ( o.o )
+   > ^ <
         '''
-
     full_message = f"""🗓️ **Среда, {date_str}** — особенный рисунок от Астариона\n\n```text\n{ascii_art}\n```"""
     await channel.send(full_message)
     print("✅ Специальный рисунок в среду отправлен")
@@ -209,26 +229,45 @@ async def send_daily_joke():
     channel = await bot.fetch_channel(CELEBRATION_CHANNEL_ID)
     if not channel:
         return
+
     theme = random.choice(JOKE_THEMES)
-    joke_prompt = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": f"Придумай короткий анекдот (шутку) на тему '{theme}'. 2-4 предложения. Без лишних слов. Только анекдот."
-        }
-    ]
-    joke = await ask_deepseek(joke_prompt, max_tokens=MAX_JOKE_TOKENS, temperature=0.9)
-    if joke and len(joke.strip()) > 10:
-        await channel.send(f"🎭 **Анекдот дня от Астариона:**\n\n{joke}\n\n🧛‍♂️")
-    else:
-        await channel.send("🎭 Не придумал сегодня анекдот... Попробую завтра.")
+    print(f"🎲 Генерируем анекдот на тему: {theme}")
+
+    for attempt in range(4):
+        joke_prompt = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": f"Придумай короткий оригинальный смешной анекдот на тему '{theme}'. "
+                           f"Обязательно придумай анекдот. "
+                           f"Ответ должен состоять ТОЛЬКО из анекдота (2-4 предложения). "
+                           f"Никаких вводных слов, никаких объяснений, никаких отказов. "
+                           f"Начинай сразу с текста анекдота."
+            }
+        ]
+
+        joke = await ask_deepseek(joke_prompt, max_tokens=MAX_JOKE_TOKENS, temperature=0.92 + attempt * 0.03)
+
+        if joke:
+            cleaned = joke.strip()
+            bad_words = ["не придумал", "не могу", "извини", "не получается", "не знаю", "сложно"]
+            if len(cleaned) > 20 and not any(word in cleaned.lower() for word in bad_words):
+                await channel.send(f"🎭 **Анекдот дня от Астариона:**\n\n{cleaned}\n\n🧛‍♂️")
+                print(f"✅ Анекдот успешно отправлен (попытка {attempt+1})")
+                return
+
+        print(f"⚠️ Попытка {attempt+1}/4 не удалась, повторяем...")
+
+    print("❌ Не удалось получить анекдот после 4 попыток")
 
 
 async def send_ascii_art():
     channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
     if not channel:
         return
-    topic = random.choice(ASCII_TOPICS)
+    
+    topic = get_random_ascii_topic()   # ← обновлено
+    
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {
@@ -264,6 +303,7 @@ ASCII:
     await channel.send(full_message)
 
 
+# ====================== ОСТАЛЬНОЙ КОД (без изменений) ======================
 async def duck_search(query: str):
     global http_session
     if http_session is None or http_session.closed:
@@ -418,6 +458,7 @@ async def wednesday_ascii_task():
         await send_wednesday_ascii()
 
 
+# ====================== КОМАНДЫ И on_message ======================
 @bot.command(name='сегодня')
 async def show_today(ctx):
     today_str = datetime.now().strftime("%d-%m")
@@ -580,7 +621,6 @@ async def on_message(message):
 
     history = conversation_history.get(message.channel.id, [])[-MAX_HISTORY_MESSAGES:]
 
-    # === Добавлено: дата и день недели ===
     today = datetime.now()
     weekday_ru = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"][today.weekday()]
     date_str = today.strftime("%d.%m.%Y")
