@@ -58,6 +58,7 @@ EMOJI RULES:
 For jokes: any real-world subject, 2-4 sentences. Каждый раз придумывай новый, не повторяйся.
 Never invent movie titles, book titles, or real-world facts.
 Use *italics* for actions. Use ||spoilers|| for secrets. Always use "ты/тебе" with everyone.
+JOKE_THEMES and DAY_EVENTS and ROMANTIC_INTENTS tracted freely, not literally.
 """
 
 WIFE_ID = 929347823693070387
