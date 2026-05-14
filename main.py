@@ -165,8 +165,15 @@ async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float
                 )
             async with http_session.post(url, headers=headers, json=payload) as resp:
                 if resp.status != 200:
-                    print(f"❌ DeepSeek вернул статус {resp.status}")
-                    return None
+                    # Пытаемся получить тело ошибки
+                    try:
+                        error_data = await resp.json()
+                        error_msg = error_data.get("error", {}).get("message", str(error_data))
+                    except:
+                        error_text = await resp.text()
+                        error_msg = error_text[:200]  # ограничим длину
+                    return f"❌ DeepSeek API ошибка {resp.status}: {error_msg}"
+                
                 data = await resp.json()
                 content = (
                     data.get("choices", [{}])[0]
@@ -174,12 +181,22 @@ async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float
                     .get("content", "")
                     .strip()
                 )
-                return content if content else None
-        except Exception as e:
-            print(f"❌ Ошибка DeepSeek (попытка {attempt + 1}): {e}")
+                if content:
+                    return content
+                else:
+                    # Пустой ответ — возможно, фильтр контента
+                    finish_reason = data.get("choices", [{}])[0].get("finish_reason", "unknown")
+                    return f"❌ DeepSeek вернул пустой ответ (finish_reason: {finish_reason})"
+        except asyncio.TimeoutError:
+            print(f"⏰ Таймаут DeepSeek (попытка {attempt+1})")
             if attempt < retries:
                 await asyncio.sleep(2)
-    return None
+        except Exception as e:
+            print(f"❌ Ошибка DeepSeek (попытка {attempt+1}): {type(e).__name__}: {e}")
+            if attempt < retries:
+                await asyncio.sleep(2)
+    
+    return "❌ Не удалось связаться с DeepSeek после всех попыток"
 
 
 # ====================== АНЕКДОТ ======================
