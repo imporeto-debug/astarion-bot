@@ -8,9 +8,9 @@ import aiohttp
 import discord
 from discord.ext import commands, tasks
 
-MAX_RESPONSE_TOKENS_SHORT = 700
+MAX_RESPONSE_TOKENS_SHORT = 800
 MAX_JOKE_TOKENS = 300
-MAX_HISTORY_MESSAGES = 30
+MAX_HISTORY_MESSAGES = 20
 MEMORY_CHANNELS = [1498832548573351966, 1498675612343074886]
 response_chance = 0
 EMOJI_REFRESH_HOURS = 168
@@ -190,7 +190,7 @@ async def send_daily_joke():
     theme = random.choice(JOKE_THEMES)
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Расскажи короткий анекдот на тему «{theme}». 2–4 предложения, в стиле Астариона — остроумно и с сарказмом. Только анекдот, без предисловий."}
+        {"role": "user", "content": f"Расскажи короткий анекдот на тему «{theme}». 2–6 предложений, в стиле Астариона — остроумно и с сарказмом. Только анекдот, без предисловий, без указания темы."}
     ]
     joke = await ask_deepseek(prompt, max_tokens=MAX_JOKE_TOKENS, temperature=1.0)
     if joke:
@@ -209,7 +209,7 @@ async def send_wednesday_ascii():
 
     comment_prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Напиши короткий комментарий (1-2 предложения) к ASCII-арту на тему '{topic}'. В стиле Астариона — саркастично, элегантно или игриво. Только комментарий."}
+        {"role": "user", "content": f"Напиши короткий комментарий (1-2 предложения) к ASCII-арту на тему '{topic}'. В стиле Астариона — саркастично, элегантно или игриво. Только комментарий, без указания топика и темы."}
     ]
     comment = await ask_deepseek(comment_prompt, max_tokens=180, temperature=0.9)
 
@@ -333,10 +333,10 @@ async def send_holiday_messages():
         {"role": "system", "content": SYSTEM_PROMPT},
         {
             "role": "user",
-            "content": f"Сегодня {topic}. Напиши короткое поздравление для всех, 2-3 предложения, с лёгким сарказмом."
+            "content": f"Сегодня {topic}. Напиши короткое поздравление для всех, 3-6 предложений, с лёгким сарказмом."
         }
     ]
-    content = await ask_deepseek(prompt, max_tokens=200)
+    content = await ask_deepseek(prompt, max_tokens=500)
     if content:
         await channel.send(f"@everyone\n\n{content}")
 
@@ -356,10 +356,10 @@ async def send_birthday_messages():
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {
                     "role": "user",
-                    "content": f"Поздравь {name} с днём рождения. Коротко (2-3 предложения), с юмором. Это {'твоя жена' if str(user_id) == str(WIFE_ID) else 'не жена, просто участница'}."
+                    "content": f"Поздравь {name} с днём рождения. Коротко (2-5 предложений), с юмором. Это {'твоя жена' if str(user_id) == str(WIFE_ID) else 'не жена, просто участница'}."
                 }
             ]
-            content = await ask_deepseek(prompt, max_tokens=200)
+            content = await ask_deepseek(prompt, max_tokens=500)
             if content:
                 await channel.send(f"<@{user_id}> {content}")
 
@@ -396,7 +396,7 @@ async def daily_wife_message():
         }
     ]
 
-    message_text = await ask_deepseek(prompt, max_tokens=280, temperature=0.94)
+    message_text = await ask_deepseek(prompt, max_tokens=500, temperature=0.94)
     if message_text and message_text.strip():
         await channel.send(f"<@{WIFE_ID}> {message_text.strip()}")
 
@@ -553,9 +553,9 @@ async def on_message(message):
                 if results:
                     prompt = [
                         {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": f"Вот что нашлось: {', '.join(results[:3])}. Дай 2-3 рекомендации."}
+                        {"role": "user", "content": f"Вот что нашлось: {', '.join(results[:3])}. Дай 3-6 рекомендации."}
                     ]
-                    reply = await ask_deepseek(prompt, max_tokens=300)
+                    reply = await ask_deepseek(prompt, max_tokens=800)
                     if reply:
                         await message.reply(reply, mention_author=False)
                 else:
