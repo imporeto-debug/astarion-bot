@@ -8,8 +8,8 @@ import aiohttp
 import discord
 from discord.ext import commands, tasks
 
-MAX_RESPONSE_TOKENS_SHORT = 800
-MAX_JOKE_TOKENS = 600
+MAX_RESPONSE_TOKENS_SHORT = 1200
+MAX_JOKE_TOKENS = 1200  # ИСПРАВЛЕНО: было 600, увеличено для анекдотов
 MAX_HISTORY_MESSAGES = 20
 MEMORY_CHANNELS = [1498832548573351966, 1498675612343074886]
 response_chance = 0
@@ -165,28 +165,32 @@ async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float
                 )
             async with http_session.post(url, headers=headers, json=payload) as resp:
                 if resp.status != 200:
-                    # Пытаемся получить тело ошибки
                     try:
                         error_data = await resp.json()
                         error_msg = error_data.get("error", {}).get("message", str(error_data))
                     except:
                         error_text = await resp.text()
-                        error_msg = error_text[:200]  # ограничим длину
+                        error_msg = error_text[:200]
                     return f"❌ DeepSeek API ошибка {resp.status}: {error_msg}"
-                
+
                 data = await resp.json()
-                content = (
-                    data.get("choices", [{}])[0]
-                    .get("message", {})
-                    .get("content", "")
-                    .strip()
-                )
+                choice = data.get("choices", [{}])[0]
+                content = choice.get("message", {}).get("content", "").strip()
+                finish_reason = choice.get("finish_reason", "unknown")
+
                 if content:
+                    # ИСПРАВЛЕНО: возвращаем контент даже если finish_reason == "length"
+                    # Раньше при length контент мог быть непустым, но код падал в ветку "пустой ответ"
                     return content
                 else:
-                    # Пустой ответ — возможно, фильтр контента
-                    finish_reason = data.get("choices", [{}])[0].get("finish_reason", "unknown")
-                    return f"❌ DeepSeek вернул пустой ответ (finish_reason: {finish_reason})"
+                    # Контент действительно пустой — логируем и повторяем
+                    print(f"⚠️ DeepSeek вернул пустой content (finish_reason: {finish_reason}, попытка {attempt+1})")
+                    if attempt < retries:
+                        await asyncio.sleep(2)
+                        continue
+                    return None  # ИСПРАВЛЕНО: возвращаем None вместо строки с ошибкой,
+                                 # чтобы вызывающий код мог это обработать без отправки сообщения об ошибке
+
         except asyncio.TimeoutError:
             print(f"⏰ Таймаут DeepSeek (попытка {attempt+1})")
             if attempt < retries:
@@ -195,8 +199,8 @@ async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float
             print(f"❌ Ошибка DeepSeek (попытка {attempt+1}): {type(e).__name__}: {e}")
             if attempt < retries:
                 await asyncio.sleep(2)
-    
-    return "❌ Не удалось связаться с DeepSeek после всех попыток"
+
+    return None  # ИСПРАВЛЕНО: возвращаем None вместо строки с ошибкой
 
 
 # ====================== АНЕКДОТ ======================
@@ -213,6 +217,8 @@ async def send_daily_joke():
     joke = await ask_deepseek(prompt, max_tokens=MAX_JOKE_TOKENS, temperature=1.0)
     if joke:
         await channel.send(f"🎭 **Анекдот дня** (тема: {theme})\n\n{joke.strip()}")
+    else:
+        print("⚠️ Анекдот не получен, сообщение не отправлено")
 
 
 # ====================== ASCII РИСУНКИ ======================
@@ -229,7 +235,7 @@ async def send_wednesday_ascii():
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Напиши короткий комментарий (1-2 предложения) к ASCII-арту на тему '{topic}'. В стиле Астариона — саркастично, элегантно или игриво. Только комментарий, без указания топика и темы."}
     ]
-    comment = await ask_deepseek(comment_prompt, max_tokens=180, temperature=0.9)
+    comment = await ask_deepseek(comment_prompt, max_tokens=500, temperature=0.9)
 
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -354,7 +360,7 @@ async def send_holiday_messages():
             "content": f"Сегодня {topic}. Напиши короткое поздравление для всех, 3-6 предложений, с лёгким сарказмом."
         }
     ]
-    content = await ask_deepseek(prompt, max_tokens=500)
+    content = await ask_deepseek(prompt, max_tokens=1200)
     if content:
         await channel.send(f"@everyone\n\n{content}")
 
@@ -377,14 +383,12 @@ async def send_birthday_messages():
                     "content": f"Поздравь {name} с днём рождения. Коротко (2-5 предложений), с юмором. Это {'твоя жена' if str(user_id) == str(WIFE_ID) else 'не жена, просто участница'}."
                 }
             ]
-            content = await ask_deepseek(prompt, max_tokens=500)
+            content = await ask_deepseek(prompt, max_tokens=1200)
             if content:
                 await channel.send(f"<@{user_id}> {content}")
 
 
 # ====================== ЗАДАЧИ ======================
-# Все времена указаны по МСК. utc_time() переводит их в UTC для tasks.loop.
-
 @tasks.loop(time=utc_time(19, 0))  # 19:00 МСК
 async def daily_wife_message():
     await bot.wait_until_ready()
@@ -414,7 +418,7 @@ async def daily_wife_message():
         }
     ]
 
-    message_text = await ask_deepseek(prompt, max_tokens=500, temperature=0.94)
+    message_text = await ask_deepseek(prompt, max_tokens=1200, temperature=0.94)
     if message_text and message_text.strip():
         await channel.send(f"<@{WIFE_ID}> {message_text.strip()}")
 
@@ -428,7 +432,6 @@ async def daily_joke_task():
 @tasks.loop(time=utc_time(8, 0))  # 08:00 МСК — только по средам
 async def wednesday_ascii_task():
     await bot.wait_until_ready()
-    # Проверяем день именно по МСК, чтобы не было сдвига около полуночи
     if now_msk().weekday() == 2:  # 2 = среда
         await send_wednesday_ascii()
 
