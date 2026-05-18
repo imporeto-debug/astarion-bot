@@ -11,7 +11,7 @@ from discord.ext import commands, tasks
 # ====================== КОНФИГУРАЦИЯ ======================
 MAX_RESPONSE_TOKENS_SHORT = 4000
 MAX_JOKE_TOKENS = 4000
-MAX_HISTORY_MESSAGES = 20
+MAX_HISTORY_MESSAGES = 15
 MEMORY_CHANNELS = [1498832548573351966, 1498675612343074886]
 response_chance = 0
 EMOJI_REFRESH_HOURS = 168
