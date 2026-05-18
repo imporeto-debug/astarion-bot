@@ -154,7 +154,7 @@ async def ask_gemini(messages: list[dict], max_tokens: int, temperature: float =
         last_request_time = asyncio.get_event_loop().time()
 
         payload = {
-            "model": "gemini-3.1-flash",      # имя модели, которое принимает прокси
+            "model": "gemini-3.1-flash-lite",      # имя модели, которое принимает прокси
             "messages": messages,
             "temperature": temperature,
             "top_p": 0.9,
