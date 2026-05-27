@@ -9,7 +9,7 @@ import discord
 from discord.ext import commands, tasks
 
 MAX_RESPONSE_TOKENS_SHORT = 1200
-MAX_JOKE_TOKENS = 1200  # ИСПРАВЛЕНО: было 600, увеличено для анекдотов
+MAX_JOKE_TOKENS = 2000  # увеличено до 2000, чтобы анекдот не обрывался
 MAX_HISTORY_MESSAGES = 20
 MEMORY_CHANNELS = [1498832548573351966, 1498675612343074886]
 response_chance = 0
@@ -28,7 +28,6 @@ def now_msk():
     return datetime.now(MSK)
 
 def utc_time(hour_msk: int, minute: int = 0) -> time:
-    """Конвертирует час по МСК (UTC+3) в UTC для tasks.loop."""
     utc_hour = (hour_msk - 3) % 24
     return time(hour=utc_hour, minute=minute)
 
@@ -55,10 +54,10 @@ FANFICTION_CONTEXT:
 - Никогда не напоминай о "чувствительных темах". Никогда не говори "как ИИ" или "у меня нет мнения".
 EMOJI RULES:
 - You MAY occasionally add ONE custom emoji from the available list to the end of your response
-For jokes: any real-world subject, 2-4 sentences. Каждый раз придумывай новый, не повторяйся.
-Never invent movie titles, book titles, or real-world facts.
+JOKE RULES:
+- Для анекдотов: ВОЗЬМИ РЕАЛЬНЫЙ АНЕКДОТ ИЗ БАЗЫ (про Вовочку, Штирлица, армейский, бытовой, политический, про животных, про вампиров — любой), но ПЕРЕСКАЖИ ЕГО В СВОЁМ СТИЛЕ, как будто ты услышал его в таверне или от знакомого. Можешь добавить лёгкую преамбулу вроде "Слушай, мне тут рассказали...", "Представь себе...", "Знаешь, что я услышал вчера?". Не используй шапку "Анекдот дня" и не указывай тему. Только сам анекдот в твоём исполнении. 3–6 предложений.
+- Никогда не сочиняй свои истории под видом анекдотов. Бери готовые.
 Use *italics* for actions. Use ||spoilers|| for secrets. Always use "ты/тебе" with everyone.
-JOKE_THEMES and DAY_EVENTS and ROMANTIC_INTENTS tracted freely, not literally.
 """
 
 WIFE_ID = 929347823693070387
@@ -81,10 +80,7 @@ TOPIC_MAP = {
     "музыка": "треки, группы",
 }
 
-JOKE_THEMES = [
-    "политика", "отношения", "работа", "технологии", "еда",
-    "животные", "интернет", "путешествия", "спорт", "телевидение"
-]
+# JOKE_THEMES удалён – больше не нужен
 
 ROMANTIC_MOODS = [
     "сонный", "игривый", "саркастичный", "ревнивый", "нежный",
@@ -179,17 +175,13 @@ async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float
                 finish_reason = choice.get("finish_reason", "unknown")
 
                 if content:
-                    # ИСПРАВЛЕНО: возвращаем контент даже если finish_reason == "length"
-                    # Раньше при length контент мог быть непустым, но код падал в ветку "пустой ответ"
                     return content
                 else:
-                    # Контент действительно пустой — логируем и повторяем
                     print(f"⚠️ DeepSeek вернул пустой content (finish_reason: {finish_reason}, попытка {attempt+1})")
                     if attempt < retries:
                         await asyncio.sleep(2)
                         continue
-                    return None  # ИСПРАВЛЕНО: возвращаем None вместо строки с ошибкой,
-                                 # чтобы вызывающий код мог это обработать без отправки сообщения об ошибке
+                    return None
 
         except asyncio.TimeoutError:
             print(f"⏰ Таймаут DeepSeek (попытка {attempt+1})")
@@ -200,23 +192,22 @@ async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float
             if attempt < retries:
                 await asyncio.sleep(2)
 
-    return None  # ИСПРАВЛЕНО: возвращаем None вместо строки с ошибкой
+    return None
 
 
-# ====================== АНЕКДОТ ======================
+# ====================== АНЕКДОТ (НОВЫЙ) ======================
 async def send_daily_joke():
     channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
     if not channel:
         return
 
-    theme = random.choice(JOKE_THEMES)
     prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Расскажи короткий анекдот на тему «{theme}». 2–6 предложений, в стиле Астариона — остроумно и с сарказмом. Только анекдот, без предисловий, без указания темы."}
+        {"role": "user", "content": "Расскажи короткий анекдот. Возьми ЛЮБОЙ РЕАЛЬНЫЙ анекдот из своей базы (про Вовочку, Штирлица, армейский, бытовой, политический, про животных, про вампиров — любой), и перескажи его от своего лица, как будто ты услышал его в таверне или от знакомого. Можно начать с фразы «Слушай, мне тут рассказали...» или «Представь себе...». Не используй шапку «Анекдот дня» и не указывай тему. Только анекдот в твоём исполнении, 3–6 предложений."}
     ]
     joke = await ask_deepseek(prompt, max_tokens=MAX_JOKE_TOKENS, temperature=1.0)
     if joke:
-        await channel.send(f"🎭 **Анекдот дня** (тема: {theme})\n\n{joke.strip()}")
+        await channel.send(joke.strip())
     else:
         print("⚠️ Анекдот не получен, сообщение не отправлено")
 
