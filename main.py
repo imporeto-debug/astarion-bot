@@ -9,7 +9,7 @@ import aiohttp
 import discord
 from discord.ext import commands, tasks
 
-MAX_RESPONSE_TOKENS_SHORT = 1200
+MAX_RESPONSE_TOKENS_SHORT = 2000
 MAX_JOKE_TOKENS = 2000  # Оставлено большим для thinking-токенов
 MAX_HISTORY_MESSAGES = 20
 MEMORY_CHANNELS = [1498832548573351966, 1498675612343074886]
