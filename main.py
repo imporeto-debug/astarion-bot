@@ -382,7 +382,7 @@ async def send_holiday_messages():
             "content": f"Сегодня {topic}. Напиши короткое поздравление для всех, 3-6 предложений, с лёгким сарказмом."
         }
     ]
-    content = await ask_deepseek(prompt, max_tokens=1200)
+    content = await ask_deepseek(prompt, max_tokens=4000)
     if content:
         await channel.send(f"@everyone\n\n{content}")
 
@@ -405,7 +405,7 @@ async def send_birthday_messages():
                     "content": f"Поздравь {name} с днём рождения. Коротко (2-5 предложений), с юмором. Это {'твоя жена' if str(user_id) == str(WIFE_ID) else 'не жена, просто участница'}."
                 }
             ]
-            content = await ask_deepseek(prompt, max_tokens=1200)
+            content = await ask_deepseek(prompt, max_tokens=3500)
             if content:
                 await channel.send(f"<@{user_id}> {content}")
 
@@ -464,7 +464,7 @@ async def holiday_task():
     await send_holiday_messages()
 
 
-@tasks.loop(time=utc_time(12, 0))  # 12:00 МСК
+@tasks.loop(time=utc_time(12, 0))  # 12:10 МСК
 async def birthday_task():
     await bot.wait_until_ready()
     await send_birthday_messages()
