@@ -138,7 +138,7 @@ def get_random_ascii_topic():
 # ====================== DEEPSEEK API ======================
 async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float = 0.9, retries: int = 2):
     global http_session
-    url = "https://riftai.su/v1/chat/completions"
+    url = "https://males-coverage-specialist-explore.trycloudflare.com/proxy/deepseek/chat/completions"
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
