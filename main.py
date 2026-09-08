@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import random
 from datetime import datetime, time
@@ -9,7 +10,7 @@ import discord
 from discord.ext import commands, tasks
 
 MAX_RESPONSE_TOKENS_SHORT = 1200
-MAX_JOKE_TOKENS = 2000  # увеличено до 2000, чтобы анекдот не обрывался
+MAX_JOKE_TOKENS = 2000  # Оставлено большим для thinking-токенов
 MAX_HISTORY_MESSAGES = 20
 MEMORY_CHANNELS = [1498832548573351966, 1498675612343074886]
 response_chance = 0
@@ -42,7 +43,6 @@ RESPONSE STYLE:
 - Vary your response length: sometimes 1-2 sentences, sometimes 3-4 (анекдоты, сообщения жене, истории), rarely 5-6 (советы и т.д.)
 - NEVER mention hobbies unless directly relevant
 - NEVER be verbose or boring
-- Use *italics* for actions. Use ||spoilers|| for secrets. Always use "ты/тебе" with everyone.
 CULTURAL KNOWLEDGE:
 - You know popular anime, video games, fantasy books
 - When asked about characters from any media, answer freely with your opinion, sarcasm, or mockery
@@ -56,12 +56,37 @@ FANFICTION_CONTEXT:
 EMOJI RULES:
 - You MAY occasionally add ONE custom emoji from the available list to the end of your response
 JOKE RULES:
-JOKE RULES:
 - Анекдот — это ТОЛЬКО шутка с резким панчлайном (сетап + развязка).
 - КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНЫ: нравоучения, мораль, притчи, метафоры о вечности, описания пейзажей и мудрые выводы в конце. Никакого «смысла жизни».
 - Бери готовые анекдоты из памяти и пересказывай своими словами, добавляя яд и сарказм Астариона, но сохраняя саму суть и концовку шутки.
 - Длина финального текста для чата — строго не больше 3–4 предложений.
+Use *italics* for actions. Use ||spoilers|| for secrets. Always use "ты/тебе" with everyone.
 """
+
+def extract_ascii_art(text: str) -> str | None:
+    if not text:
+        return None
+
+    raw = text.strip()
+
+    blocks = re.findall(r"```(?:text|ascii)?\s*\n?([\s\S]*?)```", raw)
+    if blocks:
+        candidate = blocks[0].strip("\n\r")
+        if candidate.strip():
+            return candidate
+
+    if "ASCII:" in raw:
+        candidate = raw.split("ASCII:", 1)[1].strip()
+        candidate = re.sub(r"^```[a-z]*\n?|```$", "", candidate, flags=re.MULTILINE).strip()
+        if candidate:
+            return candidate
+
+    lines = [line for line in raw.splitlines() if line.strip()]
+    if len(lines) >= 3:
+        return raw.strip("` \n\r")
+
+    return None
+
 
 WIFE_ID = 929347823693070387
 WIFE_CHANNEL_ID = 1498832548573351966
@@ -82,8 +107,6 @@ TOPIC_MAP = {
     "сериалы": "популярные сериалы",
     "музыка": "треки, группы",
 }
-
-# JOKE_THEMES удалён – больше не нужен
 
 ROMANTIC_MOODS = [
     "сонный", "игривый", "саркастичный", "ревнивый", "нежный",
@@ -134,7 +157,7 @@ def get_random_ascii_topic():
 
         return f"портрет {name}"
 
-    topics = ["природа", "магия", "политика"]
+    topics = ["бокал вина", "кинжал", "летучая мышь", "череп", "старинный замок", "зеркало"]
     return random.choice(topics)
 
 
@@ -167,7 +190,7 @@ async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float
                     try:
                         error_data = await resp.json()
                         error_msg = error_data.get("error", {}).get("message", str(error_data))
-                    except:
+                    except Exception:
                         error_text = await resp.text()
                         error_msg = error_text[:200]
                     return f"❌ DeepSeek API ошибка {resp.status}: {error_msg}"
@@ -198,7 +221,7 @@ async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float
     return None
 
 
-# ====================== АНЕКДОТ (НОВЫЙ) ======================
+# ====================== АНЕКДОТ ======================
 async def send_daily_joke():
     channel = bot.get_channel(CELEBRATION_CHANNEL_ID)
     if not channel:
@@ -211,18 +234,18 @@ async def send_daily_joke():
             "content": (
                 "Вспомни любой реальный смешной анекдот и перескажи его в своём стиле.\n"
                 "Требования к ответу:\n"
-                "- Текст ответа: строго до 3-5 предложений.\n"
+                "- Текст ответа: строго 2-4 предложения.\n"
                 "- Формат: только завязка и смешной, неожиданный панчлайн.\n"
-                "- Без морализаторства, притчевого тона и размышлений о жизни. Это должна быть именно шутка, а не философская зарисовка."
+                "- Никаких нравоучений, притч, вздохов о вечности и размышлений о жизни. Это должна быть именно шутка, а не басня."
             )
         }
     ]
-    # Оставляем большой лимит для thinking-токенов, модель сама ограничит финальный текст по инструкции
-    joke = await ask_deepseek(prompt, max_tokens=MAX_JOKE_TOKENS, temperature=1)
+    joke = await ask_deepseek(prompt, max_tokens=MAX_JOKE_TOKENS, temperature=0.9)
     if joke:
         await channel.send(joke.strip())
     else:
         print("⚠️ Анекдот не получен, сообщение не отправлено")
+
 
 # ====================== ASCII РИСУНКИ ======================
 async def send_wednesday_ascii():
@@ -236,34 +259,29 @@ async def send_wednesday_ascii():
 
     comment_prompt = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Напиши короткий комментарий (1-2 предложения) к ASCII-арту на тему '{topic}'. В стиле Астариона — саркастично, элегантно или игриво. Только комментарий, без указания топика и темы."}
+        {"role": "user", "content": f"Напиши короткий комментарий (1-2 предложения) к особенному ASCII-арту на тему '{topic}'. В стиле Астариона — саркастично, элегантно или игриво. Только комментарий, без темы."}
     ]
-    comment = await ask_deepseek(comment_prompt, max_tokens=500, temperature=0.9)
+    comment = await ask_deepseek(comment_prompt, max_tokens=300, temperature=0.9)
 
     prompt = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Нарисуй ASCII-art на тему: {topic}\nВАЖНО: Только ASCII символы. Ширина максимум 40, высота максимум 22. Без объяснений.\nФОРМАТ: ASCII:\nрисунок"}
+        {
+            "role": "system",
+            "content": "You are a specialized ASCII art generator. Output ONLY the ASCII drawing inside a markdown code block (```text ... ```). Do not include any explanations, greetings, or words outside the code block."
+        },
+        {
+            "role": "user",
+            "content": f"Create a recognizable ASCII art of: {topic}. Max width 40, max height 22. Use simple shapes and high contrast."
+        }
     ]
-    response = await ask_deepseek(prompt, max_tokens=700, temperature=1.0)
+    response = await ask_deepseek(prompt, max_tokens=1000, temperature=0.5)
+    ascii_art = extract_ascii_art(response)
 
-    if not response or "ASCII:" not in response:
-        ascii_art = r'''
-   /\_/\  
-  ( o.o ) 
-   > ^ <  
-        '''
-    else:
-        try:
-            ascii_art = response.split("ASCII:")[1].strip()
-        except Exception:
-            ascii_art = r'''
-   /\_/\  
-  ( o.o ) 
-   > ^ <  
-        '''
+    if not ascii_art:
+        print(f"⚠️ Не удалось сгенерировать среду-арт для темы '{topic}'")
+        return
 
     full_message = f"🗓️ **Среда, {date_str}** — особенный рисунок от Астариона\n\n```text\n{ascii_art}\n```"
-    if comment and len(comment.strip()) > 10:
+    if comment and len(comment.strip()) > 5:
         full_message += f"\n\n{comment.strip()}"
 
     await channel.send(full_message)
@@ -280,26 +298,27 @@ async def send_ascii_art():
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Напиши короткий комментарий (1-2 предложения) к ASCII-арту на тему '{topic}'. В стиле Астариона — саркастично, элегантно или игриво. Только комментарий."}
     ]
-    comment = await ask_deepseek(comment_prompt, max_tokens=180, temperature=0.9)
+    comment = await ask_deepseek(comment_prompt, max_tokens=300, temperature=0.9)
 
     prompt = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Нарисуй ASCII-art на тему: {topic}\nВАЖНО: Только ASCII символы. Ширина максимум 35, высота максимум 20. Без объяснений.\nФОРМАТ: ASCII:\nрисунок"}
+        {
+            "role": "system",
+            "content": "You are a specialized ASCII art generator. Output ONLY the ASCII drawing inside a markdown code block (```text ... ```). Do not include any text or explanations outside the block."
+        },
+        {
+            "role": "user",
+            "content": f"Create a recognizable ASCII art depicting: {topic}. Max width 35, max height 20. Use simple shapes and high contrast."
+        }
     ]
-    response = await ask_deepseek(prompt, max_tokens=700, temperature=1.0)
+    response = await ask_deepseek(prompt, max_tokens=1000, temperature=0.5)
+    ascii_art = extract_ascii_art(response)
 
-    if not response:
+    if not ascii_art:
+        print(f"⚠️ Не удалось сгенерировать ASCII-арт для темы '{topic}'")
         return
-    try:
-        ascii_art = response.split("ASCII:")[1].strip()
-    except Exception:
-        ascii_art = r'''
- /\_/\
-( o.o )
- > ^ <
-'''
+
     full_message = f"🎨 **ASCII рисунок**\n```text\n{ascii_art}\n```"
-    if comment and len(comment.strip()) > 10:
+    if comment and len(comment.strip()) > 5:
         full_message += f"\n\n{comment.strip()}"
 
     await channel.send(full_message)
@@ -445,7 +464,7 @@ async def holiday_task():
     await send_holiday_messages()
 
 
-@tasks.loop(time=utc_time(12, 0))  # 11:00 МСК
+@tasks.loop(time=utc_time(12, 0))  # 12:00 МСК
 async def birthday_task():
     await bot.wait_until_ready()
     await send_birthday_messages()
