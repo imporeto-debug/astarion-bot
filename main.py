@@ -440,7 +440,7 @@ async def daily_wife_message():
         }
     ]
 
-    message_text = await ask_deepseek(prompt, max_tokens=1200, temperature=0.94)
+    message_text = await ask_deepseek(prompt, max_tokens=3000, temperature=0.94)
     if message_text and message_text.strip():
         await channel.send(f"<@{WIFE_ID}> {message_text.strip()}")
 
@@ -464,7 +464,7 @@ async def holiday_task():
     await send_holiday_messages()
 
 
-@tasks.loop(time=utc_time(12, 0))  # 12:10 МСК
+@tasks.loop(time=utc_time(12, 30))  # 12:30 МСК
 async def birthday_task():
     await bot.wait_until_ready()
     await send_birthday_messages()
