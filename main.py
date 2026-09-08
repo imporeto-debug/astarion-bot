@@ -433,7 +433,7 @@ async def holiday_task():
     await send_holiday_messages()
 
 
-@tasks.loop(time=utc_time(11, 0))  # 11:00 МСК
+@tasks.loop(time=utc_time(12, 0))  # 11:00 МСК
 async def birthday_task():
     await bot.wait_until_ready()
     await send_birthday_messages()
