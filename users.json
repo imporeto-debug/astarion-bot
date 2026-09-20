@@ -5,60 +5,53 @@
     "wife": true,
     "info": "she/her. Lives in Ufa, is married to Astarion Ancunin from Baldur's Gate 3, talented artist"
   },
-
   "1258759864835113034": {
     "name": "Жена Кёнига",
-    "birthday": "01-06",
-    "wife": true,
+    "birthday": "01-06-1994",
+    "wife": false,
     "info": "she/her. Lives in Chelyabinsk, is married to König from Call of Duty, loves muscular masked soldiers, is a skilled artist"
   },
-
   "1226203355324350476": {
-    "name": "Жена Мадары",
+    "name": "Жена Марары",
     "birthday": "12-09",
-    "wife": true,
+    "wife": false,
     "info": "she/her. Lives in Novorossiysk, is married to Madara Uchiha from Naruto, knows astrology"
   },
-
+  
   "436043247912222720": {
     "name": "Жена Хидана & Какузу",
     "birthday": "",
-    "wife": true,
+    "wife": false,
     "info": "she/her. Lives in Barnaul, is married to Hidan and Kakuzu from Naruto, loves traveling and cats"
   },
-
   "838105570182561812": {
     "name": "Жена Саске",
     "birthday": "",
     "wife": true,
     "info": "she/her. Lives in Vladimir, is married to Sasuke Uchiha from Naruto, enjoys climbing gym, videogames, and classic tv-show like Sopranos"
   },
-
   "188771782713409537": {
     "name": "Жена Сасори",
     "birthday": "08-09",
-    "wife": true,
-    "info": "she/her. Lives in Chelyabinsk, is married to Sasori from Naruto, enjoys abandoned places, bjd dolls, and mechanical things"
+    "wife": false,
+    "info": "she/her. Lives in Chelyabinsk, is married to Sasori from Naruto, enjoys abandoned places and mechanical things"
   },
-
   "1226379952002301985": {
     "name": "Жена Итачи",
     "birthday": "17-02",
-    "wife": true,
+    "wife": false,
     "info": "she/her. Lives in Kemerovo, is married to Itachi Uchiha from Naruto, learning Chinese"
   },
-
   "756554618112311387": {
     "name": "Жена Тобирамы",
     "birthday": "06-09",
-    "wife": true,
-    "info": "she/her. Lives in Izhevsk, is married to Tobirama Senju, enjoys growing plants and painting (studying in art school)"
+    "wife": false,
+    "info": "she/her. Lives in Izhevsk, is married to Tobirama Senju, enjoys growing plants"
   },
-
   "289055075156885505": {
     "name": "Жена Соласа",
-    "birthday": "24-12",
-    "wife": true,
+    "birthday": "24-12-1992",
+    "wife": false,
     "info": "she/her. Lives in Moscow, is married to Solas from Dragon Age, enjoys 3D printing, painting figurines and neural networks"
   }
 }
