@@ -647,7 +647,7 @@ async def on_message(message):
         f"Обращение: {address}.\n"
         f"{personal_info}\n"
         f"{spouses_text}\n"
-        "\nОтветь живо, с огоньком, флиртом или иронией."
+        "\nОтветь живо, естественно и по существу, сохраняя характер Астариона."
     )
 
     if hasattr(bot, 'server_emojis') and bot.server_emojis:
