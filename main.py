@@ -141,7 +141,7 @@ def get_random_ascii_topic():
 
 
 # ====================== DEEPSEEK API ======================
-async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float = 0.9, retries: int = 2):
+async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float = 1.2, retries: int = 2):
     global http_session
     url = "https://lighter-handling-comparison-softball.trycloudflare.com/proxy/deepseek/chat/completions"
     headers = {
@@ -211,8 +211,7 @@ async def send_daily_joke():
         {
             "role": "user",
             "content": (
-                "Расскажи короткий, искромётный и циничный анекдот или едкую байку в стиле Астариона.\n"
-                "Темы на выбор: супружеские измены знати, тупые паладины/герои, смерть и яды, нелепые любовники, охотники на вампиров или жадные священники.\n"
+                "Расскажи короткий, искромётный и циничный анекдот в стиле Астариона.\n"
                 "Требования:\n"
                 "- Строго 2–4 предложения.\n"
                 "- Чёткая структура: сочная завязка и неожиданный, дерзкий панчлайн с чёрным юмором.\n"
@@ -255,7 +254,7 @@ async def send_wednesday_ascii():
                 "content": f"Draw a compact, high-contrast, recognizable ASCII art of: {topic}. Size: 20-30 characters wide, 10-18 lines tall. Use clean characters (#, @, *, ., :, /). Keep it centered and solid."
             }
         ]
-        response = await ask_deepseek(prompt, max_tokens=1000, temperature=0.4)
+        response = await ask_deepseek(prompt, max_tokens=1000, erature=0.4)
         ascii_art = extract_ascii_art(response)
         if ascii_art:
             break
@@ -284,10 +283,10 @@ async def send_ascii_art():
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Напиши короткий комментарий (1-2 предложения) к ASCII-арту на тему '{topic}'. В стиле Астариона — саркастично, элегантно или игриво. Только комментарий."}
     ]
-    comment = await ask_deepseek(comment_prompt, max_tokens=300, temperature=0.9)
+    comment = await ask_deepseek(comment_prompt, max_tokens=300, erature=0.9)
 
     ascii_art = None
-    for attempt in range(3):
+    for att in range(3):
         prompt = [
             {
                 "role": "system",
@@ -298,7 +297,7 @@ async def send_ascii_art():
                 "content": f"Create a recognizable ASCII art depicting: {topic}. Max width 30, max height 18. Use clean characters (#, @, *, ., :, /) and high contrast."
             }
         ]
-        response = await ask_deepseek(prompt, max_tokens=1000, temperature=0.4)
+        response = await ask_deepseek(prompt, max_tokens=1000, erature=0.4)
         ascii_art = extract_ascii_art(response)
         if ascii_art:
             break
@@ -431,7 +430,7 @@ async def daily_wife_message():
         }
     ]
 
-    message_text = await ask_deepseek(prompt, max_tokens=3000, temperature=0.94)
+    message_text = await ask_deepseek(prompt, max_tokens=3000, temperature=1.2)
     if message_text and message_text.strip():
         await channel.send(f"<@{WIFE_ID}> {message_text.strip()}")
 
