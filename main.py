@@ -143,7 +143,7 @@ def get_random_ascii_topic():
 # ====================== DEEPSEEK API ======================
 async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float = 1.2, retries: int = 2):
     global http_session
-    url = "https://lighter-handling-comparison-softball.trycloudflare.com/proxy/deepseek/chat/completions"
+    url = "https://strong-bones-vanilla-blackjack.trycloudflare.com/proxy/deepseek/chat/completions"
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
