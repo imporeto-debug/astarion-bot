@@ -149,7 +149,7 @@ async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "deepseek-ai/DeepSeek-V4-Pro-0813",
+        "model": "deepseek-v4.1-flash-1017",
         "messages": messages,
         "temperature": temperature,
         "top_p": 0.9,
