@@ -17,8 +17,10 @@ response_chance = 0
 EMOJI_REFRESH_HOURS = 168
 ASTARION_REACTIONS = ["🧛", "🩸", "🥀", "🎭", "🍷", "✨", "👔", "📜", "🗡️", "🕸️", "🦇", "🌙"]
 
-DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+import config
+
+DISCORD_TOKEN = getattr(config, "DISCORD_TOKEN", None) or os.getenv("DISCORD_TOKEN")
+DEEPSEEK_API_KEY = getattr(config, "DEEPSEEK_API_KEY", None) or os.getenv("DEEPSEEK_API_KEY")
 
 if not DISCORD_TOKEN or not DEEPSEEK_API_KEY:
     raise RuntimeError("Missing DISCORD_TOKEN or DEEPSEEK_API_KEY")
