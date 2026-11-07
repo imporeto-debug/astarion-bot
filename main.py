@@ -143,13 +143,13 @@ def get_random_ascii_topic():
 # ====================== DEEPSEEK API ======================
 async def ask_deepseek(messages: list[dict], max_tokens: int, temperature: float = 1.2, retries: int = 2):
     global http_session
-    url = "https://strong-bones-vanilla-blackjack.trycloudflare.com/proxy/deepseek/chat/completions"
+    url = "https://api.reformboss.com/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "deepseek-v4-pro",
+        "model": "deepseek-ai/DeepSeek-V4-Pro-0813",
         "messages": messages,
         "temperature": temperature,
         "top_p": 0.9,
