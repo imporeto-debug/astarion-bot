@@ -256,7 +256,7 @@ async def send_wednesday_ascii():
                 "content": f"Draw a compact, high-contrast, recognizable ASCII art of: {topic}. Size: 20-30 characters wide, 10-18 lines tall. Use clean characters (#, @, *, ., :, /). Keep it centered and solid."
             }
         ]
-        response = await ask_deepseek(prompt, max_tokens=1000, erature=0.4)
+        response = await ask_deepseek(prompt, max_tokens=1000, terature=0.4)
         ascii_art = extract_ascii_art(response)
         if ascii_art:
             break
@@ -285,7 +285,7 @@ async def send_ascii_art():
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Напиши короткий комментарий (1-2 предложения) к ASCII-арту на тему '{topic}'. В стиле Астариона — саркастично, элегантно или игриво. Только комментарий."}
     ]
-    comment = await ask_deepseek(comment_prompt, max_tokens=300, erature=0.9)
+    comment = await ask_deepseek(comment_prompt, max_tokens=300, terature=0.9)
 
     ascii_art = None
     for att in range(3):
@@ -299,7 +299,7 @@ async def send_ascii_art():
                 "content": f"Create a recognizable ASCII art depicting: {topic}. Max width 30, max height 18. Use clean characters (#, @, *, ., :, /) and high contrast."
             }
         ]
-        response = await ask_deepseek(prompt, max_tokens=1000, erature=0.4)
+        response = await ask_deepseek(prompt, max_tokens=1000, terature=0.4)
         ascii_art = extract_ascii_art(response)
         if ascii_art:
             break
